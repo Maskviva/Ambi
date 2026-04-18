@@ -1,0 +1,7 @@
+/target/
+/.idea/
+/log/
+/.cargo/
+/Cargo.lock
+/run_ide.bat
+/config.toml
