@@ -5,8 +5,8 @@ use crate::core::llm::engine::LlamaEngine;
 use crate::core::llm::openai::OpenAIEngine;
 
 use crate::core::llm::{EngineBackend, EngineConfig};
-use crate::utils::LLM_LOGGER;
 use anyhow::{anyhow, Result};
+use log::error;
 use std::cell::RefCell;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -19,7 +19,7 @@ impl LLMEngine {
         #[cfg(feature = "cloud")]
         if let Some(openai_cfg) = cfg.open_ai {
             let engine = OpenAIEngine::load(openai_cfg).map_err(|e| {
-                LLM_LOGGER.errorf(format_args!("OpenAI引擎加载失败: {}", e));
+                error!("OpenAI引擎加载失败: {}", e);
                 anyhow::anyhow!("OpenAI引擎加载失败: {}", e)
             })?;
             return Ok(LLMEngine {
@@ -30,7 +30,7 @@ impl LLMEngine {
         #[cfg(feature = "local")]
         if let Some(llama_cfg) = cfg.llama {
             let engine = LlamaEngine::load(llama_cfg).map_err(|e| {
-                LLM_LOGGER.errorf(format_args!("Llama引擎加载失败: {}", e));
+                error!("Llama引擎加载失败: {}", e);
                 anyhow::anyhow!("Llama引擎加载失败: {}", e)
             })?;
             return Ok(LLMEngine {
@@ -38,7 +38,7 @@ impl LLMEngine {
             });
         }
 
-        LLM_LOGGER.errorf(format_args!("未找到任何有效的 LLM 引擎配置 {:?}", cfg));
+        error!("未找到任何有效的 LLM 引擎配置 {:?}", cfg);
         panic!("未找到任何有效的 LLM 引擎配置！请检查配置文件。");
     }
 
@@ -60,7 +60,7 @@ impl LLMEngine {
                 });
 
                 if let Err(e) = res {
-                    LLM_LOGGER.errorf(format_args!("Llama 模型输出出错: {}", e));
+                    error!("Llama 模型输出出错: {}", e);
                     return Err(anyhow!("Llama error: {}", e));
                 }
                 Ok(output_buffer.into_inner())
@@ -72,7 +72,7 @@ impl LLMEngine {
                 match res {
                     Ok(text) => Ok(text),
                     Err(e) => {
-                        LLM_LOGGER.errorf(format_args!("OpenAI 模型输出出错: {}", e));
+                        error!("OpenAI 模型输出出错: {}", e);
                         Err(anyhow!("OpenAI error: {}", e))
                     }
                 }
@@ -100,7 +100,7 @@ impl LLMEngine {
                 });
 
                 if let Err(e) = res {
-                    LLM_LOGGER.errorf(format_args!("Llama Stream输出出错: {}", e));
+                    error!("Llama Stream输出出错: {}", e);
                 }
             }
 
@@ -109,7 +109,7 @@ impl LLMEngine {
                 let res = engine.generate_response_stream(prompt, tx).await;
 
                 if let Err(e) = res {
-                    LLM_LOGGER.errorf(format_args!("OpenAI Stream输出出错: {}", e));
+                    error!("OpenAI Stream输出出错: {}", e);
                 }
             }
         }

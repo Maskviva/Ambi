@@ -21,8 +21,11 @@ metal = ["local", "llama-cpp-2/metal", "llama-cpp-sys-2/metal"]
 rocm = ["local", "llama-cpp-2/rocm", "llama-cpp-sys-2/rocm"]
 
 [dependencies]
-llama-cpp-2 = { version = "=0.1.140", optional = true }
-llama-cpp-sys-2 = { version = "=0.1.140", optional = true }
+log = "0.4.29"
+simplelog = "0.12.2"
+
+llama-cpp-2 = { version = "0.1.143", optional = true }
+llama-cpp-sys-2 = { version = "0.1.142", optional = true }
 async-openai = { version = "0.34.0", features = ["full"], optional = true }
 
 serde = { version = "1.0", features = ["derive"] }

@@ -3,9 +3,9 @@ use crate::core::llm::formatter::StreamFormatter;
 use crate::core::llm::handler::LLMEngine;
 use crate::core::llm::EngineConfig;
 use crate::core::tool::{DynTool, Tool, ToolDefinition, ToolManager};
-use crate::utils::AGENT_LOGGER;
 
 use anyhow::Result;
+use log::error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -225,7 +225,7 @@ impl Agent {
                 .completion_request
                 .try_lock()
                 .map_err(|e| {
-                    AGENT_LOGGER.errorf(format_args!("工具 {} 添加失败: {}", def.name.clone(), e));
+                    error!("工具 {} 添加失败: {}", def.name.clone(), e);
                     anyhow::anyhow!("工具 {} 添加失败: {}", def.name.clone(), e)
                 })
                 .expect(&format!(
@@ -257,7 +257,7 @@ impl Agent {
         let tool_result = ToolManager::run_tool(&req.__tool_map, name.clone(), &args).await;
 
         let tool_msg = tool_result.unwrap_or_else(|e| {
-            AGENT_LOGGER.errorf(format_args!("工具 {} 执行失败: {}", name, e));
+            error!("工具 {} 执行失败: {}", name, e);
             "".to_string()
         });
 

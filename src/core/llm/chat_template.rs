@@ -30,7 +30,7 @@ impl ChatTemplateType {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ChatTemplate {
+pub struct ChatTemplate {
     pub system_prefix: String,
     pub system_suffix: String,
     pub user_prefix: String,

@@ -5,10 +5,10 @@ use async_openai::types::chat::{
 };
 use async_openai::Client;
 use futures::StreamExt;
+use log::{debug, error};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::core::llm::OpenAIEngineConfig;
-use crate::utils::LLM_LOGGER;
 
 #[derive(Clone)]
 pub struct OpenAIEngine {
@@ -36,10 +36,10 @@ impl OpenAIEngine {
         new_prompt: &str,
         tx: UnboundedSender<String>,
     ) -> Result<()> {
-        LLM_LOGGER.debugf(format_args!(
+        debug!(
             "\n [OpenAI API] Request \n ========================================\n{}",
             new_prompt
-        ));
+        );
 
         let model_name = self.cfg.model_name.clone();
 
@@ -53,15 +53,15 @@ impl OpenAIEngine {
                     for choice in response.choices {
                         if let Some(content) = choice.delta.content {
                             if tx.send(content).is_err() {
-                                LLM_LOGGER
-                                    .debug("输出通道已关闭，终止 OpenAI 网络流接收");
+                                
+                                    debug!("输出通道已关闭，终止 OpenAI 网络流接收");
                                 return Ok(());
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    LLM_LOGGER.errorf(format_args!("OpenAI Stream Error: {}", e));
+                    error!("OpenAI Stream Error: {}", e);
                 }
             }
         }

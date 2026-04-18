@@ -4,7 +4,6 @@ use std::num::NonZeroU32;
 use std::path::Path;
 
 use crate::core::llm::LlamaEngineConfig;
-use crate::utils::LLM_LOGGER;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -13,6 +12,7 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_sys_2;
+use log::{debug, error, info, trace, warn};
 
 extern "C" fn llm_engine_log_callback(
     level: llama_cpp_sys_2::ggml_log_level,
@@ -20,31 +20,17 @@ extern "C" fn llm_engine_log_callback(
     _data: *mut std::os::raw::c_void,
 ) {
     let text = unsafe { CStr::from_ptr(text) };
-    let log_str = &text.to_string_lossy();
+    let log_str = text.to_string_lossy();
 
-    // 根据日志级别处理
+    let clean_str = log_str.trim_end();
+
     match level {
-        llama_cpp_sys_2::GGML_OP_NONE => {
-            LLM_LOGGER.none(log_str);
-        }
-        llama_cpp_sys_2::GGML_LOG_LEVEL_DEBUG => {
-            LLM_LOGGER.debug(log_str);
-        }
-        llama_cpp_sys_2::GGML_LOG_LEVEL_ERROR => {
-            LLM_LOGGER.error(log_str);
-        }
-        llama_cpp_sys_2::GGML_LOG_LEVEL_WARN => {
-            LLM_LOGGER.warn(log_str);
-        }
-        llama_cpp_sys_2::GGML_LOG_LEVEL_INFO => {
-            LLM_LOGGER.info(log_str);
-        }
-        llama_cpp_sys_2::GGML_LOG_LEVEL_CONT => {
-            LLM_LOGGER.write_raw(log_str);
-        }
-        _ => {
-            LLM_LOGGER.unknown(log_str);
-        }
+        llama_cpp_sys_2::GGML_LOG_LEVEL_DEBUG => debug!("{}", clean_str),
+        llama_cpp_sys_2::GGML_LOG_LEVEL_ERROR => error!("{}", clean_str),
+        llama_cpp_sys_2::GGML_LOG_LEVEL_WARN => warn!("{}", clean_str),
+        llama_cpp_sys_2::GGML_LOG_LEVEL_INFO => info!("{}", clean_str),
+        llama_cpp_sys_2::GGML_LOG_LEVEL_CONT => trace!("{}", log_str),
+        _ => {}
     }
 }
 
@@ -121,10 +107,10 @@ impl LlamaEngine {
     where
         F: Fn(String),
     {
-        LLM_LOGGER.debugf(format_args!(
+        debug!(
             "\n {} \n ========================================",
             new_prompt
-        ));
+        );
         let tokens_list = self
             .model
             .str_to_token(new_prompt, AddBos::Always)
