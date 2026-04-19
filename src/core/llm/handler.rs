@@ -19,8 +19,8 @@ impl LLMEngine {
         #[cfg(feature = "cloud")]
         if let Some(openai_cfg) = cfg.open_ai {
             let engine = OpenAIEngine::load(openai_cfg).map_err(|e| {
-                error!("OpenAI引擎加载失败: {}", e);
-                anyhow::anyhow!("OpenAI引擎加载失败: {}", e)
+                error!("Failed to load OpenAI engine: {}", e);
+                anyhow::anyhow!("Failed to load OpenAI engine: {}", e)
             })?;
             return Ok(LLMEngine {
                 backend: EngineBackend::OpenAI(engine),
@@ -30,16 +30,18 @@ impl LLMEngine {
         #[cfg(feature = "local")]
         if let Some(llama_cfg) = cfg.llama {
             let engine = LlamaEngine::load(llama_cfg).map_err(|e| {
-                error!("Llama引擎加载失败: {}", e);
-                anyhow::anyhow!("Llama引擎加载失败: {}", e)
+                error!("Failed to load Llama engine: {}", e);
+                anyhow::anyhow!("Failed to load Llama engine: {}", e)
             })?;
             return Ok(LLMEngine {
                 backend: EngineBackend::Llama(engine),
             });
         }
 
-        error!("未找到任何有效的 LLM 引擎配置 {:?}", cfg);
-        panic!("未找到任何有效的 LLM 引擎配置！请检查配置文件。");
+        error!("No valid LLM engine configuration found: {:?}", cfg);
+        Err(anyhow!(
+            "No valid LLM engine configuration found! Please check your settings."
+        ))
     }
 
     pub async fn chat(&mut self, prompt: &str, is_tool_call: bool) -> Result<String> {
@@ -60,7 +62,7 @@ impl LLMEngine {
                 });
 
                 if let Err(e) = res {
-                    error!("Llama 模型输出出错: {}", e);
+                    error!("Llama model generation error: {}", e);
                     return Err(anyhow!("Llama error: {}", e));
                 }
                 Ok(output_buffer.into_inner())
@@ -72,7 +74,7 @@ impl LLMEngine {
                 match res {
                     Ok(text) => Ok(text),
                     Err(e) => {
-                        error!("OpenAI 模型输出出错: {}", e);
+                        error!("OpenAI model generation error: {}", e);
                         Err(anyhow!("OpenAI error: {}", e))
                     }
                 }
@@ -100,7 +102,7 @@ impl LLMEngine {
                 });
 
                 if let Err(e) = res {
-                    error!("Llama Stream输出出错: {}", e);
+                    error!("Llama stream generation error: {}", e);
                 }
             }
 
@@ -109,7 +111,7 @@ impl LLMEngine {
                 let res = engine.generate_response_stream(prompt, tx).await;
 
                 if let Err(e) = res {
-                    error!("OpenAI Stream输出出错: {}", e);
+                    error!("OpenAI stream generation error: {}", e);
                 }
             }
         }

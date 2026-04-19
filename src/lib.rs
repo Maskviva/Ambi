@@ -7,10 +7,17 @@
     all(feature = "metal", feature = "rocm")
 ))]
 compile_error!(
-    "不能同时启用多个 LLM 硬件加速后端 请在 cuda, vulkan, metal, rocm 中只选择一个 feature。"
+    "Cannot enable multiple LLM hardware acceleration backends. Please select only one of: cuda, vulkan, metal, rocm."
 );
 
-pub mod config;
 pub mod core;
-pub mod tools;
-pub mod utils;
+
+pub use crate::core::agent::Agent;
+pub use crate::core::llm::{EngineBackend, EngineConfig};
+pub use crate::core::tool::{Tool, ToolDefinition};
+
+#[cfg(feature = "local")]
+pub use crate::core::llm::LlamaEngineConfig;
+
+#[cfg(feature = "cloud")]
+pub use crate::core::llm::OpenAIEngineConfig;

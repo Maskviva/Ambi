@@ -3,7 +3,7 @@ pub mod formatter;
 pub mod handler;
 
 #[cfg(feature = "local")]
-mod engine;
+pub(crate) mod engine;
 #[cfg(feature = "cloud")]
 pub mod openai;
 

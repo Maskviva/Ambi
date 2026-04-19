@@ -77,7 +77,7 @@ impl ToolManager {
         if !tools.is_empty() {
             let tools_json = serde_json::to_string(&tools).unwrap_or_default();
             prompt.push_str(&format!(
-                "你可以调用工具。调用格式：\n[TOOL_CALL]{{\"name\":\"工具名\",\"args\":{{...}}}}[/TOOL_CALL]\n可用工具:\n{}",
+                "You can use tools. Call format:\n[TOOL_CALL]{{\"name\":\"tool_name\",\"args\":{{...}}}}[/TOOL_CALL]\nAvailable tools:\n{}",
                 tools_json
             ));
         }

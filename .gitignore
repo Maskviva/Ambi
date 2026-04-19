@@ -4,4 +4,4 @@
 /.cargo/
 /Cargo.lock
 /run_ide.bat
-/config.toml
+/example/chat_local/config.toml

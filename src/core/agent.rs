@@ -217,21 +217,11 @@ impl Agent {
         self
     }
 
-    pub fn tool<T: Tool + 'static>(self, tool: T) -> Self {
+    pub fn tool<T: Tool + 'static>(self, tool: T) -> Result<Self> {
         let def = tool.definition();
 
         {
-            let mut req = self
-                .completion_request
-                .try_lock()
-                .map_err(|e| {
-                    error!("工具 {} 添加失败: {}", def.name.clone(), e);
-                    anyhow::anyhow!("工具 {} 添加失败: {}", def.name.clone(), e)
-                })
-                .expect(&format!(
-                    "工具 {} 添加失败: 不要在异步任务并发运行时调用 .tool() 初始化 Agent。",
-                    def.name
-                ));
+            let mut req = self.completion_request.try_lock()?;
 
             if !req.tools.iter().any(|t| t.name == def.name) {
                 req.tools.push(ToolDefinition {
@@ -244,7 +234,7 @@ impl Agent {
             }
         }
 
-        self
+        Ok(self)
     }
 
     async fn handle_tool_call(
@@ -257,8 +247,8 @@ impl Agent {
         let tool_result = ToolManager::run_tool(&req.__tool_map, name.clone(), &args).await;
 
         let tool_msg = tool_result.unwrap_or_else(|e| {
-            error!("工具 {} 执行失败: {}", name, e);
-            "".to_string()
+            error!("Failed to execute tool '{}': {}", name, e);
+            format!("Failed to execute tool '{}': {}", name, e)
         });
 
         req.chat_history.push(Message::Tool {
