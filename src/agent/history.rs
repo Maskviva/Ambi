@@ -24,4 +24,28 @@ impl ChatHistory {
     pub fn clear(&mut self) {
         self.messages.clear();
     }
+
+    pub fn evict_for_memory(&mut self, initial_keep: usize, recent_keep: usize) -> Vec<Message> {
+        let total = self.messages.len();
+
+        if total <= initial_keep + recent_keep {
+            return Vec::new();
+        }
+
+        let mut evict_count = total - initial_keep - recent_keep;
+
+        if evict_count % 2 != 0 {
+            evict_count -= 1;
+        }
+
+        if evict_count == 0 {
+            return Vec::new();
+        }
+
+        let evicted = self
+            .messages
+            .drain(initial_keep..(initial_keep + evict_count))
+            .collect();
+        evicted
+    }
 }

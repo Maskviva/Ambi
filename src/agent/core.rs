@@ -1,9 +1,10 @@
+use crate::agent::formatter::StreamFormatter;
 use crate::agent::history::ChatHistory;
 use crate::agent::message::Message;
 use crate::agent::tool::{DynTool, Tool, ToolDefinition, ToolManager};
 use crate::llm::chat_template::{ChatTemplate, ChatTemplateType};
-use crate::llm::formatter::StreamFormatter;
-use crate::llm::handler::LLMEngine;
+use crate::llm::handler::LLMRequest;
+use crate::llm::handler::{LLMEngine, LLMEngineTrait};
 use crate::llm::EngineConfig;
 
 use anyhow::Result;
@@ -14,7 +15,7 @@ use std::fmt::Write;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 
 #[derive(Serialize, Deserialize)]
 pub struct CompletionRequest {
@@ -35,6 +36,17 @@ pub struct Agent {
 impl Agent {
     pub fn make(engine_cfg: EngineConfig) -> Result<Self> {
         let engine = LLMEngine::load(engine_cfg)?;
+
+        Ok(Self::init_agent(engine))
+    }
+
+    pub fn with_custom_engine(custom_backend: Box<dyn LLMEngineTrait>) -> Result<Self> {
+        let engine = LLMEngine::from_custom(custom_backend);
+
+        Ok(Self::init_agent(engine))
+    }
+
+    fn init_agent(engine: LLMEngine) -> Self {
         let llm_engine = Arc::new(TokioMutex::new(engine));
 
         let completion_request = Arc::new(TokioMutex::new(CompletionRequest {
@@ -42,14 +54,14 @@ impl Agent {
             __requested: false,
         }));
 
-        Ok(Self {
+        Self {
             llm_engine,
             completion_request,
             system_prompt: String::new(),
             template: ChatTemplateType::Chatml.as_template(),
             tools_def: Arc::new(Vec::new()),
             tool_map: Arc::new(HashMap::new()),
-        })
+        }
     }
 
     pub async fn chat(&mut self, prompt: &str) -> String {
@@ -63,7 +75,7 @@ impl Agent {
         let mut final_formatted_output = String::new();
 
         loop {
-            let input_prompt = Self::get_prompt(
+            let req_data = Self::get_llm_request(
                 &self.completion_request,
                 &self.system_prompt,
                 &self.template,
@@ -75,7 +87,7 @@ impl Agent {
                 .llm_engine
                 .lock()
                 .await
-                .chat(&input_prompt)
+                .chat(req_data)
                 .await
                 .unwrap_or_default();
 
@@ -108,8 +120,8 @@ impl Agent {
     pub async fn chat_stream(
         &mut self,
         prompt: &str,
-    ) -> Result<Pin<Box<UnboundedReceiverStream<Result<String, String>>>>, ()> {
-        use tokio::sync::mpsc::unbounded_channel;
+    ) -> Result<Pin<Box<ReceiverStream<Result<String, String>>>>, ()> {
+        use tokio::sync::mpsc::channel;
 
         let llm_engine = Arc::clone(&self.llm_engine);
         let completion_request = Arc::clone(&self.completion_request);
@@ -122,7 +134,7 @@ impl Agent {
             .chat_history
             .push(Message::user_text(&prompt));
 
-        let (tx_out, rx_out) = unbounded_channel::<Result<String, String>>();
+        let (tx_out, rx_out) = channel::<Result<String, String>>(1024);
         let template_clone = self.template.clone();
 
         let tools_def_clone = Arc::clone(&self.tools_def);
@@ -132,7 +144,7 @@ impl Agent {
             let mut target = prompt;
 
             loop {
-                let input_prompt = Self::get_prompt(
+                let req_data = Self::get_llm_request(
                     &completion_request,
                     &system_prompt,
                     &template_clone,
@@ -140,12 +152,12 @@ impl Agent {
                 )
                 .await;
 
-                let (tx_llm, mut rx_llm) = unbounded_channel::<String>();
+                let (tx_llm, mut rx_llm) = channel::<String>(1024);
                 let llm_engine_clone = Arc::clone(&llm_engine);
 
                 let llm_task = tokio::spawn(async move {
                     let mut engine = llm_engine_clone.lock().await;
-                    engine.chat_stream(&input_prompt, tx_llm).await;
+                    engine.chat_stream(req_data, tx_llm).await;
                 });
 
                 let mut full_output = String::with_capacity(1024);
@@ -156,13 +168,13 @@ impl Agent {
 
                     let cleaned_text = formatter.push(&token);
                     if !cleaned_text.is_empty() {
-                        let _ = tx_out.send(Ok(cleaned_text));
+                        let _ = tx_out.send(Ok(cleaned_text)).await;
                     }
                 }
 
                 let flushed = formatter.flush();
                 if !flushed.is_empty() {
-                    let _ = tx_out.send(Ok(flushed));
+                    let _ = tx_out.send(Ok(flushed)).await;
                 }
 
                 let _ = llm_task.await;
@@ -174,6 +186,15 @@ impl Agent {
                         content: full_output.clone(),
                     });
                     req.__requested = true;
+
+                    let evicted_msgs = req.chat_history.evict_for_memory(2, 6);
+
+                    if !evicted_msgs.is_empty() {
+                        log::debug!(
+                            "🧹 上下文截断：抽离了 {} 条中间对话放入记忆库",
+                            evicted_msgs.len()
+                        );
+                    }
                 }
 
                 match Self::handle_tool_call(&completion_request, &tool_map_clone, &full_output)
@@ -184,7 +205,8 @@ impl Agent {
                             "\n\n[TOOL_CALL]: {}({})\n[TOOL]: {}\n\n",
                             name, args, tool_msg
                         );
-                        let _ = tx_out.send(Ok(formatted_tool_block));
+
+                        let _ = tx_out.send(Ok(formatted_tool_block)).await;
 
                         target = tool_msg;
                     }
@@ -193,7 +215,7 @@ impl Agent {
             }
         });
 
-        Ok(Box::pin(UnboundedReceiverStream::new(rx_out)))
+        Ok(Box::pin(ReceiverStream::new(rx_out)))
     }
 
     pub async fn clear_history(&self) {
@@ -253,14 +275,23 @@ impl Agent {
         Some((name, args.to_string(), tool_msg))
     }
 
-    async fn get_prompt(
+    async fn get_llm_request(
         req_mutex: &TokioMutex<CompletionRequest>,
         system_prompt: &str,
         tpl: &ChatTemplate,
         tools: &[ToolDefinition],
-    ) -> String {
+    ) -> LLMRequest {
         let req = req_mutex.lock().await;
-        Self::build_prompt(system_prompt, &req, tpl, tools)
+
+        let formatted_prompt = Self::build_prompt(system_prompt, &req, tpl, tools);
+        let tool_prompt = ToolManager::tool_prompt(tools.to_vec());
+
+        LLMRequest {
+            system_prompt: system_prompt.to_string(),
+            history: req.chat_history.all().to_vec(),
+            formatted_prompt,
+            tool_prompt,
+        }
     }
 
     fn build_prompt(

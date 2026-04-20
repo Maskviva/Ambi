@@ -34,16 +34,13 @@ async fn main() -> Result<()> {
 
     // Step 4: Configure the LLM Engine.
     // Here we leave the `llama` configuration empty and specify `open_ai`.
-    let engine_config = EngineConfig {
-        llama: None,
-        open_ai: Some(OpenAIEngineConfig {
-            api_key,
-            base_url: "https://api.openai.com/v1".to_string(), // Supports OpenAI-compatible APIs
-            model_name: "gpt-4o-mini".to_string(),
-            temp: 0.7,
-            top_p: 0.9,
-        }),
-    };
+    let engine_config = EngineConfig::OpenAI(OpenAIEngineConfig {
+        api_key,
+        base_url: "https://api.openai.com/v1".to_string(), // Supports OpenAI-compatible APIs
+        model_name: "gpt-4o-mini".to_string(),
+        temp: 0.7,
+        top_p: 0.9,
+    });
 
     // Step 5: Instantiate the Agent using the Builder pattern.
     // Inject the dialogue template and system prompt.

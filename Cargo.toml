@@ -10,17 +10,17 @@ name = "ambi"
 path = "src/lib.rs"
 
 [features]
-default = ["local", "cloud"]
+default = ["llama-cpp", "openai-api"]
 
-local = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
-cloud = ["dep:async-openai"]
+llama-cpp = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
+openai-api = ["dep:async-openai"]
 
 dynamic-link = ["llama-cpp-2/dynamic-link", "llama-cpp-sys-2/dynamic-link"]
 
-cuda = ["local", "llama-cpp-2/cuda", "llama-cpp-sys-2/cuda"]
-vulkan = ["local", "llama-cpp-2/vulkan", "llama-cpp-sys-2/vulkan"]
-metal = ["local", "llama-cpp-2/metal", "llama-cpp-sys-2/metal"]
-rocm = ["local", "llama-cpp-2/rocm", "llama-cpp-sys-2/rocm"]
+cuda = ["llama-cpp", "llama-cpp-2/cuda", "llama-cpp-sys-2/cuda"]
+vulkan = ["llama-cpp", "llama-cpp-2/vulkan", "llama-cpp-sys-2/vulkan"]
+metal = ["llama-cpp", "llama-cpp-2/metal", "llama-cpp-sys-2/metal"]
+rocm = ["llama-cpp", "llama-cpp-2/rocm", "llama-cpp-sys-2/rocm"]
 
 [dependencies]
 log = "0.4"

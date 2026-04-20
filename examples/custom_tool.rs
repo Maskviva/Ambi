@@ -75,16 +75,13 @@ async fn main() -> Result<()> {
     let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
 
     // Step 3: Configure the Engine (using the Cloud engine as an example).
-    let engine_config = EngineConfig {
-        llama: None,
-        open_ai: Some(OpenAIEngineConfig {
-            api_key,
-            base_url: "https://api.openai.com/v1".to_string(),
-            model_name: "gpt-4o-mini".to_string(),
-            temp: 0.7,
-            top_p: 0.9,
-        }),
-    };
+    let engine_config = EngineConfig::OpenAI(OpenAIEngineConfig {
+        api_key,
+        base_url: "https://api.openai.com/v1".to_string(),
+        model_name: "gpt-4o-mini".to_string(),
+        temp: 0.7,
+        top_p: 0.9,
+    });
 
     // Step 4: Instantiate the Agent and **Mount the Custom Tool**.
     let mut agent = Agent::make(engine_config)?

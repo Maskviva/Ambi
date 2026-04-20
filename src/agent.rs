@@ -1,4 +1,5 @@
 pub mod core;
+pub mod formatter;
 pub mod history;
 pub mod message;
 pub mod tool;

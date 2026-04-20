@@ -15,10 +15,11 @@ pub mod llm;
 
 pub use crate::agent::Agent;
 pub use crate::agent::{Tool, ToolDefinition};
-pub use crate::llm::{EngineBackend, EngineConfig};
+pub use crate::llm::handler::LLMEngineTrait;
+pub use crate::llm::EngineConfig;
 
-#[cfg(feature = "local")]
+#[cfg(feature = "llama-cpp")]
 pub use crate::llm::LlamaEngineConfig;
 
-#[cfg(feature = "cloud")]
+#[cfg(feature = "openai-api")]
 pub use crate::llm::OpenAIEngineConfig;
