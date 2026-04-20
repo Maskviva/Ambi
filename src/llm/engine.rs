@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use std::num::NonZeroU32;
 use std::path::Path;
 
-use crate::core::llm::LlamaEngineConfig;
+use crate::llm::LlamaEngineConfig;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;

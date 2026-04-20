@@ -3,14 +3,14 @@ pub mod formatter;
 pub mod handler;
 
 #[cfg(feature = "local")]
-pub(crate) mod engine;
+pub mod engine;
 #[cfg(feature = "cloud")]
 pub mod openai;
 
 #[cfg(feature = "local")]
-use crate::core::llm::engine::LlamaEngine;
+use crate::llm::engine::LlamaEngine;
 #[cfg(feature = "cloud")]
-use crate::core::llm::openai::OpenAIEngine;
+use crate::llm::openai::OpenAIEngine;
 
 use serde::Deserialize;
 

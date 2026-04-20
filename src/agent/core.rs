@@ -1,10 +1,10 @@
-use crate::core::history::ChatHistory;
-use crate::core::llm::chat_template::{ChatTemplate, ChatTemplateType};
-use crate::core::llm::formatter::StreamFormatter;
-use crate::core::llm::handler::LLMEngine;
-use crate::core::llm::EngineConfig;
-use crate::core::message::Message;
-use crate::core::tool::{DynTool, Tool, ToolDefinition, ToolManager};
+use crate::agent::history::ChatHistory;
+use crate::agent::message::Message;
+use crate::agent::tool::{DynTool, Tool, ToolDefinition, ToolManager};
+use crate::llm::chat_template::{ChatTemplate, ChatTemplateType};
+use crate::llm::formatter::StreamFormatter;
+use crate::llm::handler::LLMEngine;
+use crate::llm::EngineConfig;
 
 use anyhow::Result;
 use log::error;

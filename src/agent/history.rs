@@ -1,4 +1,4 @@
-use crate::core::message::Message;
+use crate::agent::message::Message;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default)]

@@ -10,14 +10,15 @@ compile_error!(
     "Cannot enable multiple LLM hardware acceleration backends. Please select only one of: cuda, vulkan, metal, rocm."
 );
 
-pub mod core;
+pub mod agent;
+pub mod llm;
 
-pub use crate::core::agent::Agent;
-pub use crate::core::llm::{EngineBackend, EngineConfig};
-pub use crate::core::tool::{Tool, ToolDefinition};
+pub use crate::agent::Agent;
+pub use crate::agent::{Tool, ToolDefinition};
+pub use crate::llm::{EngineBackend, EngineConfig};
 
 #[cfg(feature = "local")]
-pub use crate::core::llm::LlamaEngineConfig;
+pub use crate::llm::LlamaEngineConfig;
 
 #[cfg(feature = "cloud")]
-pub use crate::core::llm::OpenAIEngineConfig;
+pub use crate::llm::OpenAIEngineConfig;

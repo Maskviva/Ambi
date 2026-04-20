@@ -8,7 +8,7 @@ use futures::StreamExt;
 use log::{debug, error};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::core::llm::OpenAIEngineConfig;
+use crate::llm::OpenAIEngineConfig;
 
 #[derive(Clone)]
 pub struct OpenAIEngine {
@@ -53,8 +53,7 @@ impl OpenAIEngine {
                     for choice in response.choices {
                         if let Some(content) = choice.delta.content {
                             if tx.send(content).is_err() {
-                                
-                                    debug!("输出通道已关闭，终止 OpenAI 网络流接收");
+                                debug!("输出通道已关闭，终止 OpenAI 网络流接收");
                                 return Ok(());
                             }
                         }

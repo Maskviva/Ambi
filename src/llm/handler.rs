@@ -1,10 +1,10 @@
 #[cfg(feature = "local")]
-use crate::core::llm::engine::LlamaEngine;
+use crate::llm::engine::LlamaEngine;
 
 #[cfg(feature = "cloud")]
-use crate::core::llm::openai::OpenAIEngine;
+use crate::llm::openai::OpenAIEngine;
 
-use crate::core::llm::{EngineBackend, EngineConfig};
+use crate::llm::{EngineBackend, EngineConfig};
 use anyhow::{anyhow, Result};
 use log::error;
 use std::cell::RefCell;

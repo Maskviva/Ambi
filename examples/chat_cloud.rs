@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::io::Write;
 use tokio_stream::StreamExt;
 
-use ambi::core::llm::chat_template::ChatTemplateType;
+use ambi::llm::chat_template::ChatTemplateType;
 use ambi::Agent;
 use ambi::{EngineConfig, OpenAIEngineConfig};
 

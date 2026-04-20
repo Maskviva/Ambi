@@ -4,8 +4,8 @@ use serde::Deserialize;
 use std::io::Write;
 use tokio_stream::StreamExt;
 
-use ambi::core::llm::chat_template::ChatTemplateType;
-use ambi::core::tool::ToolErr;
+use ambi::agent::tool::ToolErr;
+use ambi::llm::chat_template::ChatTemplateType;
 use ambi::{Agent, Tool, ToolDefinition};
 use ambi::{EngineConfig, OpenAIEngineConfig};
 
