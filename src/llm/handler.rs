@@ -1,5 +1,11 @@
 use crate::agent::Message;
-use crate::llm::engine::{LlamaEngine, OpenAIEngine};
+
+#[cfg(feature = "llama-cpp")]
+use crate::llm::engine::LlamaEngine;
+
+#[cfg(feature = "openai-api")]
+use crate::llm::engine::OpenAIEngine;
+
 use crate::EngineConfig;
 use anyhow::Result;
 use async_trait::async_trait;
