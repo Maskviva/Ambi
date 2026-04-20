@@ -2,8 +2,16 @@
 name = "ambi"
 version = "0.1.0"
 edition = "2021"
-description = "A flexible, dual-engine (Local & Cloud) AI Agent framework in Rust."
-license = "MIT OR Apache-2.0"
+description = "A flexible, multi-backend, customizable AI agent framework, entirely based on Rust."
+license = "Apache-2.0"
+repository = "https://github.com/Maskviva/Ambi"
+readme = "README.md"
+keywords = ["ai", "agent", "llm", "llama", "openai"]
+categories = [
+    "artificial-intelligence",
+    "api-bindings",
+    "asynchronous"
+]
 
 [lib]
 name = "ambi"

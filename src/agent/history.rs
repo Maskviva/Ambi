@@ -32,20 +32,20 @@ impl ChatHistory {
             return Vec::new();
         }
 
-        let mut evict_count = total - initial_keep - recent_keep;
+        let max_evict_idx = total - recent_keep;
 
-        if !evict_count.is_multiple_of(2) {
-            evict_count -= 1;
+        let mut safe_cut_idx = 0;
+        for i in (initial_keep..=max_evict_idx).rev() {
+            if matches!(self.messages[i], Message::User { .. }) {
+                safe_cut_idx = i;
+                break;
+            }
         }
 
-        if evict_count == 0 {
+        if safe_cut_idx <= initial_keep {
             return Vec::new();
         }
 
-        let evicted = self
-            .messages
-            .drain(initial_keep..(initial_keep + evict_count))
-            .collect();
-        evicted
+        self.messages.drain(initial_keep..safe_cut_idx).collect()
     }
 }

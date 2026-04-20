@@ -60,13 +60,6 @@ impl LlamaEngine {
             llama_cpp_sys_2::llama_log_set(Some(llm_engine_log_callback), std::ptr::null_mut());
         }
 
-        if llama_cfg.use_gpu == 0 {
-            std::env::set_var("GGML_VULKAN_DISABLE", "1");
-            std::env::set_var("CUDA_VISIBLE_DEVICES", "-1");
-            std::env::set_var("HIP_VISIBLE_DEVICES", "-1");
-            std::env::set_var("ONEAPI_DEVICE_SELECTOR", "opencl:cpu");
-        }
-
         let (init_tx, init_rx) = mpsc::channel();
         let (cmd_tx, cmd_rx) = mpsc::channel::<LlamaCommand>();
 
@@ -80,7 +73,7 @@ impl LlamaEngine {
             };
 
             let mut model_params = LlamaModelParams::default();
-            if llama_cfg.use_gpu == 1 {
+            if llama_cfg.use_gpu {
                 model_params = model_params.with_n_gpu_layers(llama_cfg.n_gpu_layers);
             } else {
                 model_params = model_params.with_n_gpu_layers(0);

@@ -30,7 +30,7 @@ pub struct Agent {
     pub template: ChatTemplate,
 
     pub tools_def: Arc<Vec<ToolDefinition>>,
-    pub tool_map: Arc<HashMap<String, Box<dyn DynTool>>>,
+    pub tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
 }
 
 impl Agent {
@@ -104,15 +104,19 @@ impl Agent {
             let cleaned_res = formatter.push(&res) + &formatter.flush();
             final_formatted_output.push_str(&cleaned_res);
 
-            match Self::handle_tool_call(&self.completion_request, &self.tool_map, &res).await {
-                Some((name, args, tool_msg)) => {
+            let tool_calls =
+                Self::handle_tool_calls(&self.completion_request, &self.tool_map, &res).await;
+
+            if !tool_calls.is_empty() {
+                for (name, args, tool_msg) in tool_calls {
                     final_formatted_output.push_str(&format!(
                         "\n\n[TOOL_CALL]: {}({})\n[TOOL]: {}\n\n",
                         name, args, tool_msg
                     ));
                     target = tool_msg;
                 }
-                None => return final_formatted_output.trim().to_string(),
+            } else {
+                return final_formatted_output.trim().to_string();
             }
         }
     }
@@ -197,20 +201,21 @@ impl Agent {
                     }
                 }
 
-                match Self::handle_tool_call(&completion_request, &tool_map_clone, &full_output)
-                    .await
-                {
-                    Some((name, args, tool_msg)) => {
+                let tool_calls =
+                    Self::handle_tool_calls(&completion_request, &tool_map_clone, &full_output)
+                        .await;
+
+                if !tool_calls.is_empty() {
+                    for (name, args, tool_msg) in tool_calls {
                         let formatted_tool_block = format!(
                             "\n\n[TOOL_CALL]: {}({})\n[TOOL]: {}\n\n",
                             name, args, tool_msg
                         );
-
                         let _ = tx_out.send(Ok(formatted_tool_block)).await;
-
                         target = tool_msg;
                     }
-                    None => break,
+                } else {
+                    break;
                 }
             }
         });
@@ -236,8 +241,8 @@ impl Agent {
     pub fn tool<T: Tool + 'static>(mut self, tool: T) -> Result<Self> {
         let def = tool.definition();
 
-        let mut defs = Arc::try_unwrap(self.tools_def).unwrap_or_default();
-        let mut map = Arc::try_unwrap(self.tool_map).unwrap_or_default();
+        let mut defs = Arc::try_unwrap(self.tools_def).unwrap_or_else(|arc| (*arc).clone());
+        let mut map = Arc::try_unwrap(self.tool_map).unwrap_or_else(|arc| (*arc).clone());
 
         if !defs.iter().any(|t| t.name == def.name) {
             defs.push(ToolDefinition {
@@ -245,7 +250,7 @@ impl Agent {
                 description: def.description,
                 parameters: def.parameters,
             });
-            map.insert(def.name, Box::new(tool));
+            map.insert(def.name, Arc::new(tool));
         }
 
         self.tools_def = Arc::new(defs);
@@ -253,26 +258,31 @@ impl Agent {
         Ok(self)
     }
 
-    async fn handle_tool_call(
+    async fn handle_tool_calls(
         req_mutex: &TokioMutex<CompletionRequest>,
-        tool_map: &HashMap<String, Box<dyn DynTool>>,
+        tool_map: &HashMap<String, Arc<dyn DynTool>>,
         assistant_response: &str,
-    ) -> Option<(String, String, String)> {
-        let (name, args) = ToolManager::parse_tool_call(assistant_response)?;
+    ) -> Vec<(String, String, String)> {
+        let calls = ToolManager::parse_tool_calls(assistant_response);
+        let mut results = Vec::new();
 
-        let tool_result = ToolManager::run_tool(tool_map, name.clone(), &args).await;
+        for (name, args) in calls {
+            let tool_result = ToolManager::run_tool(tool_map, name.clone(), &args).await;
 
-        let tool_msg = tool_result.unwrap_or_else(|e| {
-            error!("Failed to execute tool '{}': {}", name, e);
-            format!("Failed to execute tool '{}': {}", name, e)
-        });
+            let tool_msg = tool_result.unwrap_or_else(|e| {
+                error!("Failed to execute tool '{}': {}", name, e);
+                format!("Failed to execute tool '{}': {}", name, e)
+            });
 
-        req_mutex.lock().await.chat_history.push(Message::Tool {
-            target: assistant_response.to_string(),
-            content: tool_msg.clone(),
-        });
+            req_mutex.lock().await.chat_history.push(Message::Tool {
+                target: assistant_response.to_string(),
+                content: tool_msg.clone(),
+            });
 
-        Some((name, args.to_string(), tool_msg))
+            results.push((name, args.to_string(), tool_msg));
+        }
+
+        results
     }
 
     async fn get_llm_request(

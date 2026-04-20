@@ -6,7 +6,7 @@ pub struct LlamaEngineConfig {
     pub model_path: String,
     pub max_tokens: i32,
     pub buffer_size: usize,
-    pub use_gpu: i32,
+    pub use_gpu: bool,
     pub n_gpu_layers: u32,
     pub n_ctx: u32,
     pub n_tokens: usize,

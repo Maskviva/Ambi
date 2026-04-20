@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
         model_path: "C:/your-dir-path/model.gguf".to_string(), // Absolute path to the local GGUF model
         max_tokens: 4096,     // Maximum number of tokens to generate
         buffer_size: 32,      // Output buffer size
-        use_gpu: 1,           // Enable GPU acceleration (1 for yes, 0 for no)
+        use_gpu: true,        // Enable GPU acceleration
         n_gpu_layers: 100,    // Number of layers to offload to the GPU
         n_ctx: 4096,          // Context window size
         n_tokens: 4096,       // Batch size for prompt processing
