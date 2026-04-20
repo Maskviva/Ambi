@@ -1,7 +1,9 @@
+use crate::core::history::ChatHistory;
 use crate::core::llm::chat_template::{ChatTemplate, ChatTemplateType};
 use crate::core::llm::formatter::StreamFormatter;
 use crate::core::llm::handler::LLMEngine;
 use crate::core::llm::EngineConfig;
+use crate::core::message::Message;
 use crate::core::tool::{DynTool, Tool, ToolDefinition, ToolManager};
 
 use anyhow::Result;
@@ -14,21 +16,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub enum Message {
-    System { content: String },
-    User { content: String },
-    Tool { target: String, content: String },
-    Assistant { target: String, content: String },
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct CompletionRequest {
-    pub chat_history: Vec<Message>,
-    pub tools: Vec<ToolDefinition>,
-
-    #[serde(skip)]
-    __tool_map: HashMap<String, Box<dyn DynTool>>,
+    pub chat_history: ChatHistory,
     __requested: bool,
 }
 
@@ -37,6 +27,9 @@ pub struct Agent {
     pub llm_engine: Arc<TokioMutex<LLMEngine>>,
     pub system_prompt: String,
     pub template: ChatTemplate,
+
+    pub tools_def: Arc<Vec<ToolDefinition>>,
+    pub tool_map: Arc<HashMap<String, Box<dyn DynTool>>>,
 }
 
 impl Agent {
@@ -45,9 +38,7 @@ impl Agent {
         let llm_engine = Arc::new(TokioMutex::new(engine));
 
         let completion_request = Arc::new(TokioMutex::new(CompletionRequest {
-            chat_history: Vec::new(),
-            tools: Vec::new(),
-            __tool_map: HashMap::new(),
+            chat_history: ChatHistory::new(),
             __requested: false,
         }));
 
@@ -56,6 +47,8 @@ impl Agent {
             completion_request,
             system_prompt: String::new(),
             template: ChatTemplateType::Chatml.as_template(),
+            tools_def: Arc::new(Vec::new()),
+            tool_map: Arc::new(HashMap::new()),
         })
     }
 
@@ -64,12 +57,9 @@ impl Agent {
             .lock()
             .await
             .chat_history
-            .push(Message::User {
-                content: prompt.to_string(),
-            });
+            .push(Message::user_text(prompt));
 
         let mut target = prompt.to_string();
-        let mut is_tool_call = false;
         let mut final_formatted_output = String::new();
 
         loop {
@@ -77,6 +67,7 @@ impl Agent {
                 &self.completion_request,
                 &self.system_prompt,
                 &self.template,
+                &self.tools_def,
             )
             .await;
 
@@ -84,7 +75,7 @@ impl Agent {
                 .llm_engine
                 .lock()
                 .await
-                .chat(&input_prompt, is_tool_call)
+                .chat(&input_prompt)
                 .await
                 .unwrap_or_default();
 
@@ -101,14 +92,13 @@ impl Agent {
             let cleaned_res = formatter.push(&res) + &formatter.flush();
             final_formatted_output.push_str(&cleaned_res);
 
-            match Self::handle_tool_call(&self.completion_request, &res).await {
+            match Self::handle_tool_call(&self.completion_request, &self.tool_map, &res).await {
                 Some((name, args, tool_msg)) => {
                     final_formatted_output.push_str(&format!(
                         "\n\n[TOOL_CALL]: {}({})\n[TOOL]: {}\n\n",
                         name, args, tool_msg
                     ));
                     target = tool_msg;
-                    is_tool_call = true;
                 }
                 None => return final_formatted_output.trim().to_string(),
             }
@@ -130,29 +120,32 @@ impl Agent {
             .lock()
             .await
             .chat_history
-            .push(Message::User {
-                content: prompt.clone(),
-            });
+            .push(Message::user_text(&prompt));
 
         let (tx_out, rx_out) = unbounded_channel::<Result<String, String>>();
         let template_clone = self.template.clone();
 
+        let tools_def_clone = Arc::clone(&self.tools_def);
+        let tool_map_clone = Arc::clone(&self.tool_map);
+
         tokio::spawn(async move {
             let mut target = prompt;
-            let mut is_tool_call = false;
 
             loop {
-                let input_prompt =
-                    Self::get_prompt(&completion_request, &system_prompt, &template_clone).await;
+                let input_prompt = Self::get_prompt(
+                    &completion_request,
+                    &system_prompt,
+                    &template_clone,
+                    &tools_def_clone,
+                )
+                .await;
 
                 let (tx_llm, mut rx_llm) = unbounded_channel::<String>();
                 let llm_engine_clone = Arc::clone(&llm_engine);
 
                 let llm_task = tokio::spawn(async move {
                     let mut engine = llm_engine_clone.lock().await;
-                    engine
-                        .chat_stream(&input_prompt, is_tool_call, tx_llm)
-                        .await;
+                    engine.chat_stream(&input_prompt, tx_llm).await;
                 });
 
                 let mut full_output = String::with_capacity(1024);
@@ -183,7 +176,9 @@ impl Agent {
                     req.__requested = true;
                 }
 
-                match Self::handle_tool_call(&completion_request, &full_output).await {
+                match Self::handle_tool_call(&completion_request, &tool_map_clone, &full_output)
+                    .await
+                {
                     Some((name, args, tool_msg)) => {
                         let formatted_tool_block = format!(
                             "\n\n[TOOL_CALL]: {}({})\n[TOOL]: {}\n\n",
@@ -192,7 +187,6 @@ impl Agent {
                         let _ = tx_out.send(Ok(formatted_tool_block));
 
                         target = tool_msg;
-                        is_tool_call = true;
                     }
                     None => break,
                 }
@@ -202,9 +196,9 @@ impl Agent {
         Ok(Box::pin(UnboundedReceiverStream::new(rx_out)))
     }
 
-    pub async fn clear_history(&self) -> Vec<Message> {
+    pub async fn clear_history(&self) {
         self.completion_request.lock().await.chat_history.clear();
-        self.completion_request.lock().await.chat_history.clone()
+        self.llm_engine.lock().await.reset_context();
     }
 
     pub fn preamble(mut self, system_prompt: &str) -> Self {
@@ -217,41 +211,41 @@ impl Agent {
         self
     }
 
-    pub fn tool<T: Tool + 'static>(self, tool: T) -> Result<Self> {
+    pub fn tool<T: Tool + 'static>(mut self, tool: T) -> Result<Self> {
         let def = tool.definition();
 
-        {
-            let mut req = self.completion_request.try_lock()?;
+        let mut defs = Arc::try_unwrap(self.tools_def).unwrap_or_default();
+        let mut map = Arc::try_unwrap(self.tool_map).unwrap_or_default();
 
-            if !req.tools.iter().any(|t| t.name == def.name) {
-                req.tools.push(ToolDefinition {
-                    name: def.name.clone(),
-                    description: def.description,
-                    parameters: def.parameters,
-                });
-
-                req.__tool_map.insert(def.name, Box::new(tool));
-            }
+        if !defs.iter().any(|t| t.name == def.name) {
+            defs.push(ToolDefinition {
+                name: def.name.clone(),
+                description: def.description,
+                parameters: def.parameters,
+            });
+            map.insert(def.name, Box::new(tool));
         }
 
+        self.tools_def = Arc::new(defs);
+        self.tool_map = Arc::new(map);
         Ok(self)
     }
 
     async fn handle_tool_call(
         req_mutex: &TokioMutex<CompletionRequest>,
+        tool_map: &HashMap<String, Box<dyn DynTool>>,
         assistant_response: &str,
     ) -> Option<(String, String, String)> {
         let (name, args) = ToolManager::parse_tool_call(assistant_response)?;
 
-        let mut req = req_mutex.lock().await;
-        let tool_result = ToolManager::run_tool(&req.__tool_map, name.clone(), &args).await;
+        let tool_result = ToolManager::run_tool(tool_map, name.clone(), &args).await;
 
         let tool_msg = tool_result.unwrap_or_else(|e| {
             error!("Failed to execute tool '{}': {}", name, e);
             format!("Failed to execute tool '{}': {}", name, e)
         });
 
-        req.chat_history.push(Message::Tool {
+        req_mutex.lock().await.chat_history.push(Message::Tool {
             target: assistant_response.to_string(),
             content: tool_msg.clone(),
         });
@@ -263,12 +257,18 @@ impl Agent {
         req_mutex: &TokioMutex<CompletionRequest>,
         system_prompt: &str,
         tpl: &ChatTemplate,
+        tools: &[ToolDefinition],
     ) -> String {
         let req = req_mutex.lock().await;
-        Self::build_prompt(system_prompt, &req, tpl)
+        Self::build_prompt(system_prompt, &req, tpl, tools)
     }
 
-    fn build_prompt(system_prompt: &str, req: &CompletionRequest, tpl: &ChatTemplate) -> String {
+    fn build_prompt(
+        system_prompt: &str,
+        req: &CompletionRequest,
+        tpl: &ChatTemplate,
+        tools: &[ToolDefinition],
+    ) -> String {
         let mut prompt = String::with_capacity(2048);
 
         let _ = write!(
@@ -277,7 +277,7 @@ impl Agent {
             tpl.system_prefix, system_prompt, tpl.system_suffix
         );
 
-        let tool_content = ToolManager::tool_prompt(req.tools.clone());
+        let tool_content = ToolManager::tool_prompt(tools.to_vec());
         if !tool_content.is_empty() {
             let _ = write!(
                 prompt,
@@ -286,7 +286,7 @@ impl Agent {
             );
         }
 
-        for msg in &req.chat_history {
+        for msg in req.chat_history.all() {
             match msg {
                 Message::System { content } => {
                     let _ = write!(
@@ -295,8 +295,9 @@ impl Agent {
                         tpl.system_prefix, content, tpl.system_suffix
                     );
                 }
-                Message::User { content } => {
-                    let _ = write!(prompt, "{}{}{}", tpl.user_prefix, content, tpl.user_suffix);
+                Message::User { .. } => {
+                    let text = msg.get_text_content();
+                    let _ = write!(prompt, "{}{}{}", tpl.user_prefix, text, tpl.user_suffix);
                 }
                 Message::Tool { content, .. } => {
                     let _ = write!(prompt, "{}{}{}", tpl.tool_prefix, content, tpl.tool_suffix);

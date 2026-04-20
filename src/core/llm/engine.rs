@@ -76,7 +76,7 @@ impl LlamaEngine {
                 Path::new(&llama_cfg.model_path.clone()),
                 &model_params,
             )
-            .map_err(|e| anyhow!("模型加载失败: {}", e))?,
+            .map_err(|e| anyhow!("Model loading failed: {}", e))?,
         );
         let model_ref: &'static mut LlamaModel = Box::leak(model);
 
@@ -87,7 +87,7 @@ impl LlamaEngine {
         let context = Box::new(
             model_ref
                 .new_context(backend_ref, ctx_params)
-                .map_err(|e| anyhow!("上下文创建失败: {}", e))?,
+                .map_err(|e| anyhow!("Failed to create context: {}", e))?,
         );
         let context_ref: &'static mut LlamaContext<'static> = Box::leak(context);
 
@@ -114,7 +114,7 @@ impl LlamaEngine {
         let tokens_list = self
             .model
             .str_to_token(new_prompt, AddBos::Always)
-            .map_err(|e| anyhow!("Tokenize 错误: {}", e))?;
+            .map_err(|e| anyhow!("Tokenize failed: {}", e))?;
         let tokens = tokens_list.to_vec();
 
         self.batch.clear();
@@ -127,7 +127,7 @@ impl LlamaEngine {
 
         self.context
             .decode(&mut self.batch)
-            .map_err(|e| anyhow!("解码失败: {}", e))?;
+            .map_err(|e| anyhow!("Decoding failed: {}", e))?;
 
         let mut sampler = LlamaSampler::chain_simple([
             LlamaSampler::penalties(

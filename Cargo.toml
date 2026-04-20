@@ -1,13 +1,13 @@
 [package]
-name = "Ambi"
+name = "ambi"
 version = "0.1.0"
 edition = "2021"
-
-[lib]
-name = "Ambi"
-path = "src/lib.rs"
 description = "A flexible, dual-engine (Local & Cloud) AI Agent framework in Rust."
 license = "MIT OR Apache-2.0"
+
+[lib]
+name = "ambi"
+path = "src/lib.rs"
 
 [features]
 default = ["local", "cloud"]

@@ -44,11 +44,7 @@ impl LLMEngine {
         ))
     }
 
-    pub async fn chat(&mut self, prompt: &str, is_tool_call: bool) -> Result<String> {
-        if !is_tool_call {
-            self.reset_context();
-        }
-
+    pub async fn chat(&mut self, prompt: &str) -> Result<String> {
         match &mut self.backend {
             #[cfg(feature = "local")]
             EngineBackend::Llama(engine) => {
@@ -82,16 +78,7 @@ impl LLMEngine {
         }
     }
 
-    pub async fn chat_stream(
-        &mut self,
-        prompt: &str,
-        is_tool_call: bool,
-        tx: UnboundedSender<String>,
-    ) {
-        if !is_tool_call {
-            self.reset_context();
-        }
-
+    pub async fn chat_stream(&mut self, prompt: &str, tx: UnboundedSender<String>) {
         match &mut self.backend {
             #[cfg(feature = "local")]
             EngineBackend::Llama(engine) => {
@@ -117,7 +104,7 @@ impl LLMEngine {
         }
     }
 
-    fn reset_context(&mut self) {
+    pub fn reset_context(&mut self) {
         match &mut self.backend {
             #[cfg(feature = "local")]
             EngineBackend::Llama(engine) => engine.reset_context(),

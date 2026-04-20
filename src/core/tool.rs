@@ -86,14 +86,31 @@ impl ToolManager {
 
     pub fn parse_tool_call(text: &str) -> Option<(String, Value)> {
         if let Some(start) = text.find("[TOOL_CALL]") {
-            if let Some(end) = text.find("[/TOOL_CALL]") {
-                let json_part = &text[start + 11..end];
-                if let Ok(val) = serde_json::from_str::<Value>(json_part.trim()) {
+            let json_start = start + 11;
+
+            if let Some(end_offset) = text[json_start..].find("[/TOOL_CALL]") {
+                let end = json_start + end_offset;
+
+                let mut json_part = text[json_start..end].trim();
+
+                if json_part.starts_with("```json") {
+                    json_part = json_part[7..].trim();
+                } else if json_part.starts_with("```") {
+                    json_part = json_part[3..].trim();
+                }
+
+                if json_part.ends_with("```") {
+                    json_part = json_part[..json_part.len() - 3].trim();
+                }
+
+                if let Ok(val) = serde_json::from_str::<Value>(json_part) {
                     if let (Some(name), Some(args)) =
                         (val.get("name").and_then(|n| n.as_str()), val.get("args"))
                     {
                         return Some((name.to_string(), args.clone()));
                     }
+                } else {
+                    log::warn!("解析 TOOL_CALL JSON 失败: {}", json_part);
                 }
             }
         }

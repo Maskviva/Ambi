@@ -4,10 +4,10 @@ use serde::Deserialize;
 use std::io::Write;
 use tokio_stream::StreamExt;
 
-use Ambi::core::llm::chat_template::ChatTemplateType;
-use Ambi::core::tool::ToolErr;
-use Ambi::{Agent, Tool, ToolDefinition};
-use Ambi::{EngineConfig, OpenAIEngineConfig};
+use ambi::core::llm::chat_template::ChatTemplateType;
+use ambi::core::tool::ToolErr;
+use ambi::{Agent, Tool, ToolDefinition};
+use ambi::{EngineConfig, OpenAIEngineConfig};
 
 // ==========================================
 // Part 1: Custom Tool Definition

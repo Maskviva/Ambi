@@ -2,9 +2,9 @@ use anyhow::Result;
 use std::io::Write;
 use tokio_stream::StreamExt;
 
-use Ambi::core::llm::chat_template::ChatTemplateType;
-use Ambi::Agent;
-use Ambi::{EngineConfig, OpenAIEngineConfig};
+use ambi::core::llm::chat_template::ChatTemplateType;
+use ambi::Agent;
+use ambi::{EngineConfig, OpenAIEngineConfig};
 
 // ==========================================
 // Helper: Initialize Terminal Logger
