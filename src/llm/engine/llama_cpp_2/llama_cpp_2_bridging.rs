@@ -6,6 +6,7 @@ use std::sync::mpsc;
 use std::thread;
 use tokio::sync::oneshot;
 
+use crate::llm::engine::llama_cpp_2::llama_cpp_2_config::LlamaEngineConfig;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -16,7 +17,6 @@ use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
 use llama_cpp_sys_2;
 use log::{debug, error, info, trace, warn};
-use crate::llm::engine::llama_cpp_2::llama_cpp_2_config::LlamaEngineConfig;
 
 extern "C" fn llm_engine_log_callback(
     level: llama_cpp_sys_2::ggml_log_level,
