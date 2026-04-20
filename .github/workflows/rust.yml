@@ -1,0 +1,61 @@
+name: Ambi CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  GGML_VULKAN_DISABLE: 1
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      ollama:
+        image: ollama/ollama:latest
+        ports:
+          - 11434:11434
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential pkg-config cmake wget
+        sudo apt-get install -y libopenblas-dev
+        
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+        
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+      
+    - name: Setup test environment (Models)
+      run: |
+        echo "Setting up test environment..."
+        curl -X POST http://localhost:11434/api/pull -d '{"name": "qwen:0.5b"}'
+        
+        mkdir -p test_models
+        wget -qO test_models/test_model.gguf "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+        
+    - name: Check Formatting
+      run: cargo fmt --all -- --check
+
+    - name: Run Clippy (Linting)
+      run: cargo clippy --all-features -- -D warnings
+      
+    - name: Build
+      run: cargo build --all-features --verbose
+      
+    - name: Run tests
+      run: cargo test --all-features --verbose
+      env:
+        AMBI_TEST_GGUF_PATH: ./test_models/test_model.gguf
