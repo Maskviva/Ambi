@@ -12,7 +12,7 @@ pub struct ToolDefinition {
 
     #[serde(skip)]
     pub timeout_secs: Option<u64>,
-    
+
     #[serde(skip)]
     pub max_retries: Option<usize>,
 }
