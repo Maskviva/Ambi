@@ -1,3 +1,4 @@
+#[derive(Default)]
 pub struct StreamFormatter {
     buffer: String,
     in_tool_call: bool,
@@ -26,15 +27,13 @@ impl StreamFormatter {
                     continue;
                 } else if self.buffer.starts_with("[TOOL_CALL]") {
                     self.started = true;
+                } else if self.is_partial_match(&self.buffer, "<think>")
+                    || self.is_partial_match(&self.buffer, "[TOOL_CALL]")
+                {
+                    break;
                 } else {
-                    if self.is_partial_match(&self.buffer, "<think>")
-                        || self.is_partial_match(&self.buffer, "[TOOL_CALL]")
-                    {
-                        break;
-                    } else {
-                        output.push_str("[Content]: ");
-                        self.started = true;
-                    }
+                    output.push_str("[Content]: ");
+                    self.started = true;
                 }
             }
 

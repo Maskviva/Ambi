@@ -34,7 +34,7 @@ impl ChatHistory {
 
         let mut evict_count = total - initial_keep - recent_keep;
 
-        if evict_count % 2 != 0 {
+        if !evict_count.is_multiple_of(2) {
             evict_count -= 1;
         }
 

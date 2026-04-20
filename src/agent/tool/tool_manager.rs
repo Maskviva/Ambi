@@ -69,7 +69,7 @@ impl ToolManager {
         loop {
             match timeout(Duration::from_secs(15), tool.call_json(args.clone())).await {
                 Ok(Ok(result)) => {
-                    return Ok(serde_json::to_string(&result).map_err(|e| ToolErr(e.to_string()))?);
+                    return serde_json::to_string(&result).map_err(|e| ToolErr(e.to_string()));
                 }
                 Ok(Err(e)) => {
                     retries -= 1;
