@@ -5,5 +5,4 @@
 /Cargo.lock
 /run_ide.bat
 /example/chat_local/config.toml
-/src/bin/
 /copy_rs.bat

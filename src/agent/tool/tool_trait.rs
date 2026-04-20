@@ -9,6 +9,12 @@ pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters: Value,
+
+    #[serde(skip)]
+    pub timeout_secs: Option<u64>,
+    
+    #[serde(skip)]
+    pub max_retries: Option<usize>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

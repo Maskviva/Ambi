@@ -127,6 +127,7 @@ impl LlamaEngine {
                             &mut utf8_buffer,
                             |piece| {
                                 full_response.push_str(&piece);
+                                true
                             },
                         );
                         let _ = reply_tx.send(res.map(|_| full_response));
@@ -145,9 +146,7 @@ impl LlamaEngine {
                             &mut pos,
                             &mut history_tokens,
                             &mut utf8_buffer,
-                            |piece| {
-                                let _ = chunk_tx.blocking_send(piece);
-                            },
+                            |piece| chunk_tx.blocking_send(piece).is_ok(),
                         );
                         let _ = done_tx.send(());
                     }
@@ -215,7 +214,7 @@ impl LlamaEngine {
         mut callback: F,
     ) -> Result<()>
     where
-        F: FnMut(String),
+        F: FnMut(String) -> bool,
     {
         debug!("\n {} \n ========================================", prompt);
         let tokens_list = model
@@ -286,7 +285,9 @@ impl LlamaEngine {
                 utf8_buffer.extend_from_slice(&bytes);
                 match std::str::from_utf8(utf8_buffer) {
                     Ok(valid_str) => {
-                        callback(valid_str.to_string());
+                        if !callback(valid_str.to_string()) {
+                            break;
+                        }
                         utf8_buffer.clear();
                     }
                     Err(e) => {
@@ -294,7 +295,9 @@ impl LlamaEngine {
                         if valid_len > 0 {
                             let valid_str =
                                 unsafe { std::str::from_utf8_unchecked(&utf8_buffer[..valid_len]) };
-                            callback(valid_str.to_string());
+                            if !callback(valid_str.to_string()) {
+                                break;
+                            }
                             utf8_buffer.drain(..valid_len);
                         }
                     }

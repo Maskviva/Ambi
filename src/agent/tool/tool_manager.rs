@@ -71,27 +71,41 @@ impl ToolManager {
             .get(&name)
             .ok_or_else(|| ToolErr(format!("Tool {} not found", name)))?;
 
-        let mut retries = 3;
+        let def = tool.definition();
+        let timeout_duration = Duration::from_secs(def.timeout_secs.unwrap_or(15));
+        let mut retries = def.max_retries.unwrap_or(3);
 
         loop {
-            match timeout(Duration::from_secs(15), tool.call_json(args.clone())).await {
+            match timeout(timeout_duration, tool.call_json(args.clone())).await {
                 Ok(Ok(result)) => {
                     return serde_json::to_string(&result).map_err(|e| ToolErr(e.to_string()));
                 }
                 Ok(Err(e)) => {
-                    retries -= 1;
+                    retries = retries.saturating_sub(1);
                     if retries == 0 {
                         return Err(e);
                     }
-                    log::warn!("工具 '{}' 执行报错，重试... (剩余 {} 次)", name, retries);
+                    log::warn!(
+                        "Tool '{}' execution error, retrying... ({} attempts remaining)",
+                        name,
+                        retries
+                    );
                     sleep(Duration::from_millis(500)).await;
                 }
                 Err(_) => {
-                    retries -= 1;
+                    retries = retries.saturating_sub(1);
                     if retries == 0 {
-                        return Err(ToolErr(format!("工具 '{}' 执行超时 (15s)", name)));
+                        return Err(ToolErr(format!(
+                            "Tool '{}' execution timed out ({}s)",
+                            name,
+                            timeout_duration.as_secs()
+                        )));
                     }
-                    log::warn!("工具 '{}' 执行超时，重试... (剩余 {} 次)", name, retries);
+                    log::warn!(
+                        "Tool '{}' execution timed out, retrying... ({} attempts remaining)",
+                        name,
+                        retries
+                    );
                 }
             }
         }

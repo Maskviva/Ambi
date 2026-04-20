@@ -109,27 +109,27 @@ impl ChatTemplate {
 
     pub fn deepseek() -> Self {
         Self {
-            system_prefix: "".to_string(),
+            system_prefix: "<｜begin of sentence｜>".to_string(),
             system_suffix: "\n\n".to_string(),
-            user_prefix: "User: ".to_string(),
-            user_suffix: "\n\n".to_string(),
-            assistant_prefix: "Assistant: ".to_string(),
+            user_prefix: "<｜User｜>".to_string(),
+            user_suffix: "".to_string(),
+            assistant_prefix: "<｜Assistant｜>".to_string(),
             assistant_suffix: "<｜end of sentence｜>".to_string(),
-            tool_prefix: "Tool: ".to_string(),
-            tool_suffix: "\n\n".to_string(),
+            tool_prefix: "<｜tool output｜>\n".to_string(),
+            tool_suffix: "\n".to_string(),
         }
     }
 
     pub fn mistral() -> Self {
         Self {
-            system_prefix: "[INST] ".to_string(),
-            system_suffix: "\n".to_string(),
-            user_prefix: "".to_string(),
-            user_suffix: " [/INST]".to_string(),
-            assistant_prefix: " ".to_string(),
-            assistant_suffix: "</s> ".to_string(),
-            tool_prefix: "[TOOL_RESULTS] ".to_string(),
-            tool_suffix: " [/TOOL_RESULTS]".to_string(),
+            system_prefix: "<s>[INST] ".to_string(),
+            system_suffix: " [/INST]\n".to_string(),
+            user_prefix: "[INST] ".to_string(),
+            user_suffix: " [/INST]\n".to_string(),
+            assistant_prefix: "".to_string(),
+            assistant_suffix: "</s>\n".to_string(),
+            tool_prefix: "[AVAILABLE_TOOLS] ".to_string(),
+            tool_suffix: " [/AVAILABLE_TOOLS]\n".to_string(),
         }
     }
 
@@ -143,6 +143,19 @@ impl ChatTemplate {
             assistant_suffix: " </s><s>".to_string(),
             tool_prefix: " [TOOL] ".to_string(),
             tool_suffix: " [/TOOL] ".to_string(),
+        }
+    }
+
+    pub fn custom_template(template: ChatTemplate) -> Self {
+        Self {
+            system_prefix: template.system_prefix,
+            system_suffix: template.system_suffix,
+            user_prefix: template.user_prefix,
+            user_suffix: template.user_suffix,
+            assistant_prefix: template.assistant_prefix,
+            assistant_suffix: template.assistant_suffix,
+            tool_prefix: template.tool_prefix,
+            tool_suffix: template.tool_suffix,
         }
     }
 }

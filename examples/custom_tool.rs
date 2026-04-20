@@ -39,6 +39,8 @@ impl Tool for DatePumpTool {
                 "properties": {},
                 "required": []
             }),
+            timeout_secs: Some(10),
+            max_retries: Some(3),
         }
     }
 

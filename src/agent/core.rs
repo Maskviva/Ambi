@@ -195,7 +195,7 @@ impl Agent {
 
                     if !evicted_msgs.is_empty() {
                         log::debug!(
-                            "🧹 上下文截断：抽离了 {} 条中间对话放入记忆库",
+                            "上下文截断：抽离了 {} 条中间对话放入记忆库",
                             evicted_msgs.len()
                         );
                     }
@@ -249,6 +249,8 @@ impl Agent {
                 name: def.name.clone(),
                 description: def.description,
                 parameters: def.parameters,
+                timeout_secs: def.timeout_secs,
+                max_retries: def.max_retries,
             });
             map.insert(def.name, Arc::new(tool));
         }
