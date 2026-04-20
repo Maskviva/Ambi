@@ -53,4 +53,6 @@ jobs:
       - name: Run tests
         run: cargo test --no-default-features --features openai-api --verbose
         env:
+          TEST_BASE_URL: "http://localhost:11434/v1"
+          TEST_MODEL_NAME: "qwen:0.5b"
           OPENAI_API_KEY: "ollama"
