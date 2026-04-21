@@ -86,7 +86,8 @@ async fn main() -> Result<()> {
     });
 
     // Step 4: Instantiate the Agent and **Mount the Custom Tool**.
-    let mut agent = Agent::make(engine_config).await?
+    let mut agent = Agent::make(engine_config)
+        .await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt)
         .tool(DatePumpTool)?; // <-- Injecting the custom tool here

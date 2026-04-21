@@ -44,7 +44,8 @@ async fn main() -> Result<()> {
 
     // Step 5: Instantiate the Agent using the Builder pattern.
     // Inject the dialogue template and system prompt.
-    let mut agent = Agent::make(engine_config).await?
+    let mut agent = Agent::make(engine_config)
+        .await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt);
 

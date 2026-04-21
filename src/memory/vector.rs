@@ -33,14 +33,25 @@ impl VectorMemoryStore {
 impl MemoryStoreTrait for VectorMemoryStore {
     async fn add(&mut self, text: String, embedding: Option<Vec<f32>>) -> Result<()> {
         let emb = embedding.ok_or_else(|| anyhow!("Vector store requires an embedding engine"))?;
-        self.items.push(MemoryItem { text, embedding: emb });
+        self.items.push(MemoryItem {
+            text,
+            embedding: emb,
+        });
         Ok(())
     }
 
-    async fn search(&self, _query: &str, query_embedding: Option<Vec<f32>>, limit: usize) -> Result<Vec<String>> {
-        let q_emb = query_embedding.ok_or_else(|| anyhow!("Vector store requires a query embedding"))?;
+    async fn search(
+        &self,
+        _query: &str,
+        query_embedding: Option<Vec<f32>>,
+        limit: usize,
+    ) -> Result<Vec<String>> {
+        let q_emb =
+            query_embedding.ok_or_else(|| anyhow!("Vector store requires a query embedding"))?;
 
-        let mut scored_items: Vec<(f32, &String)> = self.items.iter()
+        let mut scored_items: Vec<(f32, &String)> = self
+            .items
+            .iter()
             .map(|item| {
                 let score = Self::cosine_similarity(&q_emb, &item.embedding);
                 (score, &item.text)
@@ -49,7 +60,8 @@ impl MemoryStoreTrait for VectorMemoryStore {
 
         scored_items.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        let result = scored_items.into_iter()
+        let result = scored_items
+            .into_iter()
             .take(limit)
             .map(|(_, text)| text.clone())
             .collect();

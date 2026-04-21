@@ -48,7 +48,8 @@ async fn main() -> Result<()> {
     });
 
     // Step 4: Instantiate the Agent.
-    let mut agent = Agent::make(engine_config).await?
+    let mut agent = Agent::make(engine_config)
+        .await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt);
 

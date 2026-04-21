@@ -17,7 +17,11 @@ impl LLMEngineTrait for MyCompanyEngine {
         Ok("Im a AI assistant".to_string())
     }
 
-    async fn chat_stream(&mut self, request: LLMRequest, tx: tokio::sync::mpsc::Sender<Result<String, anyhow::Error>>) {
+    async fn chat_stream(
+        &mut self,
+        request: LLMRequest,
+        tx: tokio::sync::mpsc::Sender<Result<String, anyhow::Error>>,
+    ) {
         // ... Stream processing
     }
 
