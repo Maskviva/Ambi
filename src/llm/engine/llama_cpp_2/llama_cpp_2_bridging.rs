@@ -25,7 +25,6 @@ extern "C" fn llm_engine_log_callback(
 ) {
     let text = unsafe { CStr::from_ptr(text) };
     let log_str = text.to_string_lossy();
-
     let clean_str = log_str.trim_end();
 
     match level {
@@ -54,6 +53,7 @@ enum LlamaCommand {
 pub struct LlamaEngine {
     cmd_tx: mpsc::Sender<LlamaCommand>,
 }
+
 impl LlamaEngine {
     pub fn load(llama_cfg: LlamaEngineConfig) -> Result<Self> {
         unsafe {
@@ -148,7 +148,6 @@ impl LlamaEngine {
                             &mut utf8_buffer,
                             |piece| chunk_tx.blocking_send(Ok(piece)).is_ok(),
                         );
-
                         if let Err(e) = res {
                             let _ = chunk_tx.blocking_send(Err(e));
                         }
@@ -224,7 +223,7 @@ impl LlamaEngine {
     where
         F: FnMut(String) -> bool,
     {
-        debug!("\n {} \n ========================================", prompt);
+        debug!("\n{}\n========================================", prompt);
         let tokens_list = model
             .str_to_token(prompt, AddBos::Always)
             .map_err(|e| anyhow!("Tokenize failed: {}", e))?;

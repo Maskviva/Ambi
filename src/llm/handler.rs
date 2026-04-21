@@ -1,4 +1,9 @@
 use crate::agent::Message;
+use crate::llm::engine::LLMEngineConfig;
+use anyhow::Result;
+use async_trait::async_trait;
+use log::error;
+use tokio::sync::mpsc::Sender;
 
 #[cfg(feature = "llama-cpp")]
 use crate::llm::engine::LlamaEngine;
@@ -6,17 +11,12 @@ use crate::llm::engine::LlamaEngine;
 #[cfg(feature = "openai-api")]
 use crate::llm::engine::OpenAIEngine;
 
-use anyhow::Result;
-use async_trait::async_trait;
-use log::error;
-use tokio::sync::mpsc::Sender;
-use crate::llm::engine::LLMEngineConfig;
-
 #[derive(Clone, Debug)]
 pub struct LLMRequest {
     pub system_prompt: String,
     pub history: Vec<Message>,
     pub tool_prompt: String,
+    pub memory_context: String,
     pub formatted_prompt: String,
 }
 
@@ -37,26 +37,21 @@ impl LLMEngine {
             #[cfg(feature = "llama-cpp")]
             LLMEngineConfig::Llama(llama_cfg) => {
                 llama_cfg.validate()?;
-
                 let engine = LlamaEngine::load(llama_cfg).map_err(|e| {
                     error!("Failed to load Llama engine: {}", e);
                     anyhow::anyhow!("Failed to load Llama engine: {}", e)
                 })?;
-
                 Ok(LLMEngine {
                     backend: Box::new(engine),
                 })
             }
-
             #[cfg(feature = "openai-api")]
             LLMEngineConfig::OpenAI(openai_cfg) => {
                 openai_cfg.validate()?;
-
                 let engine = OpenAIEngine::load(openai_cfg).map_err(|e| {
                     error!("Failed to load OpenAI engine: {}", e);
                     anyhow::anyhow!("Failed to load OpenAI engine: {}", e)
                 })?;
-
                 Ok(LLMEngine {
                     backend: Box::new(engine),
                 })
@@ -72,7 +67,11 @@ impl LLMEngine {
         self.backend.chat(request).await
     }
 
-    pub async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String, anyhow::Error>>) {
+    pub async fn chat_stream(
+        &mut self,
+        request: LLMRequest,
+        tx: Sender<Result<String, anyhow::Error>>,
+    ) {
         self.backend.chat_stream(request, tx).await
     }
 

@@ -51,7 +51,7 @@ impl OpenAIEngine {
         }
 
         debug!(
-            "\n [OpenAI API] Request \n ========================================\n{}",
+            "\n[OpenAI API] Request\n========================================\n{}",
             new_prompt
         );
 
@@ -67,7 +67,7 @@ impl OpenAIEngine {
                     for choice in response.choices {
                         if let Some(content) = choice.delta.content {
                             if tx.send(Ok(content)).await.is_err() {
-                                debug!("The output channel has been closed, terminating OpenAI network stream reception.");
+                                debug!("Output channel closed, terminating OpenAI stream.");
                                 return Ok(());
                             }
                         }
@@ -102,9 +102,7 @@ impl OpenAIEngine {
         Ok(content)
     }
 
-    pub fn reset_context(&mut self) {
-        // OpenAI's stateless API does not require clearing context
-    }
+    pub fn reset_context(&mut self) {}
 
     fn get_request(
         &self,
@@ -126,6 +124,15 @@ impl OpenAIEngine {
             messages.push(
                 ChatCompletionRequestSystemMessageArgs::default()
                     .content(sys_content)
+                    .build()?
+                    .into(),
+            );
+        }
+
+        if !request.memory_context.is_empty() {
+            messages.push(
+                ChatCompletionRequestSystemMessageArgs::default()
+                    .content(request.memory_context)
                     .build()?
                     .into(),
             );
@@ -165,9 +172,7 @@ impl OpenAIEngine {
 
                     let mut user_msg_args = ChatCompletionRequestUserMessageArgs::default();
                     user_msg_args.content(tool_result);
-
                     user_msg_args.name("tool_runtime");
-
                     messages.push(user_msg_args.build()?.into());
                 }
             }
