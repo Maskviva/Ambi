@@ -1,6 +1,10 @@
-use crate::agent::formatter::StreamFormatter;
-use crate::agent::history::ChatHistory;
-use crate::agent::message::Message;
+pub mod formatter;
+pub mod history;
+pub mod message;
+
+use crate::agent::core::formatter::StreamFormatter;
+use crate::agent::core::history::ChatHistory;
+use crate::agent::core::message::Message;
 use crate::agent::tool::{DynTool, Tool, ToolDefinition, ToolManager};
 use crate::llm::chat_template::{ChatTemplate, ChatTemplateType};
 use crate::llm::handler::LLMRequest;
@@ -17,8 +21,6 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex as TokioMutex;
 use tokio_stream::wrappers::ReceiverStream;
 
-static MAX_ITERATIONS: usize = 10;
-
 #[derive(Serialize, Deserialize)]
 pub struct CompletionRequest {
     pub chat_history: ChatHistory,
@@ -33,6 +35,7 @@ pub struct Agent {
     pub tools_def: Arc<Vec<ToolDefinition>>,
     pub tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
     pub on_evict_handler: Option<Arc<dyn Fn(Vec<Message>) + Send + Sync>>,
+    pub max_iterations: usize,
 }
 
 impl Agent {
@@ -65,6 +68,7 @@ impl Agent {
             tools_def: Arc::new(Vec::new()),
             tool_map: Arc::new(HashMap::new()),
             on_evict_handler: None,
+            max_iterations: 10,
         }
     }
 
@@ -76,8 +80,8 @@ impl Agent {
         let mut iteration_count = 0;
 
         loop {
-            if iteration_count >= MAX_ITERATIONS {
-                return Err(anyhow!("Agent has reached the maximum number of tool call loops ({}), forcibly terminating.", MAX_ITERATIONS));
+            if iteration_count >= self.max_iterations {
+                return Err(anyhow!("Agent has reached the maximum number of tool call loops ({}), forcibly terminating.", self.max_iterations));
             }
 
             let req_data = Self::get_llm_request(
@@ -133,17 +137,18 @@ impl Agent {
         let tools_def_clone = Arc::clone(&self.tools_def);
         let tool_map_clone = Arc::clone(&self.tool_map);
         let evict_handler_clone = self.on_evict_handler.clone();
+        let max_iterations = self.max_iterations;
 
         tokio::spawn(async move {
             let mut target = prompt_clone.clone();
             let mut iteration_count = 0;
 
             loop {
-                if iteration_count >= MAX_ITERATIONS {
+                if iteration_count >= max_iterations {
                     let _ = tx_out
                         .send(Err(format!(
                             "Agent has reached the maximum number of tool call loops ({}), forcibly terminating.",
-                            MAX_ITERATIONS
+                            max_iterations
                         )))
                         .await;
                     break;
