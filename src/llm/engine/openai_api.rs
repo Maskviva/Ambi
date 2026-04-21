@@ -19,9 +19,11 @@ impl LLMEngineTrait for OpenAIEngine {
         })
     }
 
-    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<String>) {
-        if let Err(e) = self.generate_response_stream(request, tx).await {
+    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String, anyhow::Error>>) {
+        if let Err(e) = self.generate_response_stream(request, tx.clone()).await {
             error!("OpenAI stream generation error: {}", e);
+
+            let _ = tx.send(Err(anyhow!("OpenAI API Error: {}", e))).await;
         }
     }
 

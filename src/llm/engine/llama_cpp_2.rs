@@ -14,7 +14,7 @@ impl LLMEngineTrait for LlamaEngine {
         self.chat_internal(&request.formatted_prompt).await
     }
 
-    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<String>) {
+    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String, anyhow::Error>>) {
         self.stream_internal(&request.formatted_prompt, tx).await;
     }
 

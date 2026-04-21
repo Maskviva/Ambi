@@ -45,7 +45,7 @@ enum LlamaCommand {
     },
     ChatStream {
         prompt: String,
-        chunk_tx: tokio::sync::mpsc::Sender<String>,
+        chunk_tx: tokio::sync::mpsc::Sender<Result<String, anyhow::Error>>,
         done_tx: oneshot::Sender<()>,
     },
     Reset,
@@ -137,7 +137,7 @@ impl LlamaEngine {
                         chunk_tx,
                         done_tx,
                     } => {
-                        let _res = Self::run_inference(
+                        let res = Self::run_inference(
                             &prompt,
                             &model,
                             &mut context,
@@ -146,8 +146,12 @@ impl LlamaEngine {
                             &mut pos,
                             &mut history_tokens,
                             &mut utf8_buffer,
-                            |piece| chunk_tx.blocking_send(piece).is_ok(),
+                            |piece| chunk_tx.blocking_send(Ok(piece)).is_ok(),
                         );
+
+                        if let Err(e) = res {
+                            let _ = chunk_tx.blocking_send(Err(e));
+                        }
                         let _ = done_tx.send(());
                     }
                     LlamaCommand::Reset => {
@@ -181,7 +185,11 @@ impl LlamaEngine {
             .map_err(|_| anyhow!("Reply channel closed prematurely"))?
     }
 
-    pub async fn stream_internal(&self, prompt: &str, tx: tokio::sync::mpsc::Sender<String>) {
+    pub async fn stream_internal(
+        &self,
+        prompt: &str,
+        tx: tokio::sync::mpsc::Sender<Result<String, anyhow::Error>>,
+    ) {
         let (done_tx, done_rx) = oneshot::channel();
         if self
             .cmd_tx

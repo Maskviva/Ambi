@@ -5,17 +5,19 @@ use crate::agent::tool::{DynTool, Tool, ToolDefinition, ToolManager};
 use crate::llm::chat_template::{ChatTemplate, ChatTemplateType};
 use crate::llm::handler::LLMRequest;
 use crate::llm::handler::{LLMEngine, LLMEngineTrait};
-use crate::llm::EngineConfig;
+use crate::llm::LLMEngineConfig;
 
-use anyhow::Result;
-use log::error;
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::Mutex as TokioMutex;
 use tokio_stream::wrappers::ReceiverStream;
+
+static MAX_ITERATIONS: usize = 10;
 
 #[derive(Serialize, Deserialize)]
 pub struct CompletionRequest {
@@ -34,8 +36,10 @@ pub struct Agent {
 }
 
 impl Agent {
-    pub fn make(engine_cfg: EngineConfig) -> Result<Self> {
-        let engine = LLMEngine::load(engine_cfg)?;
+    pub async fn make(engine_cfg: LLMEngineConfig) -> Result<Self> {
+        let engine = tokio::task::spawn_blocking(move || LLMEngine::load(engine_cfg))
+            .await
+            .map_err(|e| anyhow!("Failed to spawn blocking task: {}", e))??;
 
         Ok(Self::init_agent(engine))
     }
@@ -48,7 +52,6 @@ impl Agent {
 
     fn init_agent(engine: LLMEngine) -> Self {
         let llm_engine = Arc::new(TokioMutex::new(engine));
-
         let completion_request = Arc::new(TokioMutex::new(CompletionRequest {
             chat_history: ChatHistory::new(),
             __requested: false,
@@ -64,17 +67,18 @@ impl Agent {
         }
     }
 
-    pub async fn chat(&mut self, prompt: &str) -> String {
-        self.completion_request
-            .lock()
-            .await
-            .chat_history
-            .push(Message::user_text(prompt));
+    pub async fn chat(&mut self, prompt: &str) -> Result<String> {
+        Self::append_user_message(&self.completion_request, prompt).await;
 
         let mut target = prompt.to_string();
         let mut final_formatted_output = String::new();
+        let mut iteration_count = 0;
 
         loop {
+            if iteration_count >= MAX_ITERATIONS {
+                return Err(anyhow!("Agent has reached the maximum number of tool call loops ({}), forcibly terminating.", MAX_ITERATIONS));
+            }
+
             let req_data = Self::get_llm_request(
                 &self.completion_request,
                 &self.system_prompt,
@@ -83,41 +87,28 @@ impl Agent {
             )
             .await;
 
-            let res = self
-                .llm_engine
-                .lock()
-                .await
-                .chat(req_data)
-                .await
-                .unwrap_or_default();
+            let res = self.llm_engine.lock().await.chat(req_data).await?;
 
-            {
-                let mut req = self.completion_request.lock().await;
-                req.chat_history.push(Message::Assistant {
-                    target: target.clone(),
-                    content: res.clone(),
-                });
-                req.__requested = true;
-            }
+            Self::append_assistant_message_and_evict(
+                &self.completion_request,
+                target.clone(),
+                res.clone(),
+            )
+            .await;
 
             let mut formatter = StreamFormatter::new();
-            let cleaned_res = formatter.push(&res) + &formatter.flush();
-            final_formatted_output.push_str(&cleaned_res);
+            final_formatted_output.push_str(&formatter.push(&res));
+            final_formatted_output.push_str(&formatter.flush());
 
             let tool_calls =
-                Self::handle_tool_calls(&self.completion_request, &self.tool_map, &res).await;
+                Self::handle_tool_calls(&self.completion_request, &self.tool_map, &res).await?;
 
-            if !tool_calls.is_empty() {
-                for (name, args, tool_msg) in tool_calls {
-                    final_formatted_output.push_str(&format!(
-                        "\n\n[TOOL_CALL]: {}({})\n[TOOL]: {}\n\n",
-                        name, args, tool_msg
-                    ));
-                    target = tool_msg;
-                }
-            } else {
-                return final_formatted_output.trim().to_string();
+            if tool_calls.is_empty() {
+                return Ok(final_formatted_output.trim().to_string());
             }
+
+            target = Self::process_tool_calls_output(&tool_calls, &mut final_formatted_output);
+            iteration_count += 1;
         }
     }
 
@@ -130,24 +121,30 @@ impl Agent {
         let llm_engine = Arc::clone(&self.llm_engine);
         let completion_request = Arc::clone(&self.completion_request);
         let system_prompt = self.system_prompt.clone();
-        let prompt = prompt.to_string();
 
-        completion_request
-            .lock()
-            .await
-            .chat_history
-            .push(Message::user_text(&prompt));
+        Self::append_user_message(&completion_request, prompt).await;
 
+        let prompt_clone = prompt.to_string();
         let (tx_out, rx_out) = channel::<Result<String, String>>(1024);
         let template_clone = self.template.clone();
-
         let tools_def_clone = Arc::clone(&self.tools_def);
         let tool_map_clone = Arc::clone(&self.tool_map);
 
         tokio::spawn(async move {
-            let mut target = prompt;
+            let mut target = prompt_clone;
+            let mut iteration_count = 0;
 
             loop {
+                if iteration_count >= MAX_ITERATIONS {
+                    let _ = tx_out
+                        .send(Err(format!(
+                            "Agent has reached the maximum number of tool call loops ({}), forcibly terminating.",
+                            MAX_ITERATIONS
+                        )))
+                        .await;
+                    break;
+                }
+
                 let req_data = Self::get_llm_request(
                     &completion_request,
                     &system_prompt,
@@ -156,7 +153,7 @@ impl Agent {
                 )
                 .await;
 
-                let (tx_llm, mut rx_llm) = channel::<String>(1024);
+                let (tx_llm, mut rx_llm) = channel::<Result<String, anyhow::Error>>(1024);
                 let llm_engine_clone = Arc::clone(&llm_engine);
 
                 let llm_task = tokio::spawn(async move {
@@ -164,63 +161,125 @@ impl Agent {
                     engine.chat_stream(req_data, tx_llm).await;
                 });
 
-                let mut full_output = String::with_capacity(1024);
-                let mut formatter = StreamFormatter::new();
+                let (full_output, has_error) = Self::process_llm_stream(&mut rx_llm, &tx_out).await;
 
-                while let Some(token) = rx_llm.recv().await {
+                if has_error {
+                    break;
+                }
+                let _ = llm_task.await;
+
+                Self::append_assistant_message_and_evict(
+                    &completion_request,
+                    target.clone(),
+                    full_output.clone(),
+                )
+                .await;
+
+                let tool_calls = match Self::handle_tool_calls(
+                    &completion_request,
+                    &tool_map_clone,
+                    &full_output,
+                )
+                .await
+                {
+                    Ok(calls) => calls,
+                    Err(e) => {
+                        let _ = tx_out.send(Err(format!("Tool call error: {}", e))).await;
+                        break;
+                    }
+                };
+
+                if tool_calls.is_empty() {
+                    break;
+                }
+
+                let mut formatted_tools = String::new();
+                target = Self::process_tool_calls_output(&tool_calls, &mut formatted_tools);
+                let _ = tx_out.send(Ok(formatted_tools)).await;
+
+                iteration_count += 1;
+            }
+        });
+
+        Ok(Box::pin(ReceiverStream::new(rx_out)))
+    }
+
+    async fn append_user_message(req_mutex: &TokioMutex<CompletionRequest>, prompt: &str) {
+        req_mutex
+            .lock()
+            .await
+            .chat_history
+            .push(Message::user_text(prompt));
+    }
+
+    async fn append_assistant_message_and_evict(
+        req_mutex: &TokioMutex<CompletionRequest>,
+        target: String,
+        content: String,
+    ) {
+        let mut req = req_mutex.lock().await;
+        req.chat_history
+            .push(Message::Assistant { target, content });
+        req.__requested = true;
+
+        let evicted_msgs = req.chat_history.evict_for_memory(2, 6);
+        if !evicted_msgs.is_empty() {
+            log::debug!(
+                "上下文截断：抽离了 {} 条中间对话放入记忆库",
+                evicted_msgs.len()
+            );
+        }
+    }
+
+    async fn process_llm_stream(
+        rx_llm: &mut Receiver<Result<String, anyhow::Error>>,
+        tx_out: &Sender<Result<String, String>>,
+    ) -> (String, bool) {
+        let mut full_output = String::with_capacity(1024);
+        let mut formatter = StreamFormatter::new();
+        let mut has_error = false;
+
+        while let Some(result) = rx_llm.recv().await {
+            match result {
+                Ok(token) => {
                     full_output.push_str(&token);
-
                     let cleaned_text = formatter.push(&token);
                     if !cleaned_text.is_empty() {
                         let _ = tx_out.send(Ok(cleaned_text)).await;
                     }
                 }
-
-                let flushed = formatter.flush();
-                if !flushed.is_empty() {
-                    let _ = tx_out.send(Ok(flushed)).await;
-                }
-
-                let _ = llm_task.await;
-
-                {
-                    let mut req = completion_request.lock().await;
-                    req.chat_history.push(Message::Assistant {
-                        target: target.clone(),
-                        content: full_output.clone(),
-                    });
-                    req.__requested = true;
-
-                    let evicted_msgs = req.chat_history.evict_for_memory(2, 6);
-
-                    if !evicted_msgs.is_empty() {
-                        log::debug!(
-                            "上下文截断：抽离了 {} 条中间对话放入记忆库",
-                            evicted_msgs.len()
-                        );
-                    }
-                }
-
-                let tool_calls =
-                    Self::handle_tool_calls(&completion_request, &tool_map_clone, &full_output)
-                        .await;
-
-                if !tool_calls.is_empty() {
-                    for (name, args, tool_msg) in tool_calls {
-                        let formatted_tool_block = format!(
-                            "\n\n[TOOL_CALL]: {}({})\n[TOOL]: {}\n\n",
-                            name, args, tool_msg
-                        );
-                        let _ = tx_out.send(Ok(formatted_tool_block)).await;
-                        target = tool_msg;
-                    }
-                } else {
+                Err(e) => {
+                    let _ = tx_out.send(Err(format!("LLM Engine Error: {}", e))).await;
+                    has_error = true;
                     break;
                 }
             }
-        });
+        }
 
-        Ok(Box::pin(ReceiverStream::new(rx_out)))
+        if !has_error {
+            let flushed = formatter.flush();
+            if !flushed.is_empty() {
+                let _ = tx_out.send(Ok(flushed)).await;
+            }
+        }
+
+        (full_output, has_error)
+    }
+
+    fn process_tool_calls_output(
+        tool_calls: &[(String, String, String)],
+        output_buffer: &mut String,
+    ) -> String {
+        let mut last_target = String::new();
+        for (name, args, tool_msg) in tool_calls {
+            let formatted_tool_block = format!(
+                "\n\n[TOOL_CALL]: {}({})\n[TOOL]: {}\n\n",
+                name, args, tool_msg
+            );
+            output_buffer.push_str(&formatted_tool_block);
+            last_target = tool_msg.clone();
+        }
+        last_target
     }
 
     pub async fn clear_history(&self) {
@@ -240,7 +299,6 @@ impl Agent {
 
     pub fn tool<T: Tool + 'static>(mut self, tool: T) -> Result<Self> {
         let def = tool.definition();
-
         let mut defs = Arc::try_unwrap(self.tools_def).unwrap_or_else(|arc| (*arc).clone());
         let mut map = Arc::try_unwrap(self.tool_map).unwrap_or_else(|arc| (*arc).clone());
 
@@ -264,17 +322,15 @@ impl Agent {
         req_mutex: &TokioMutex<CompletionRequest>,
         tool_map: &HashMap<String, Arc<dyn DynTool>>,
         assistant_response: &str,
-    ) -> Vec<(String, String, String)> {
+    ) -> Result<Vec<(String, String, String)>> {
         let calls = ToolManager::parse_tool_calls(assistant_response);
         let mut results = Vec::new();
 
         for (name, args) in calls {
             let tool_result = ToolManager::run_tool(tool_map, name.clone(), &args).await;
 
-            let tool_msg = tool_result.unwrap_or_else(|e| {
-                error!("Failed to execute tool '{}': {}", name, e);
-                format!("Failed to execute tool '{}': {}", name, e)
-            });
+            let tool_msg =
+                tool_result.unwrap_or_else(|e| format!("Failed to execute tool '{}': {}", name, e));
 
             req_mutex.lock().await.chat_history.push(Message::Tool {
                 target: assistant_response.to_string(),
@@ -284,7 +340,7 @@ impl Agent {
             results.push((name, args.to_string(), tool_msg));
         }
 
-        results
+        Ok(results)
     }
 
     async fn get_llm_request(
@@ -294,7 +350,6 @@ impl Agent {
         tools: &[ToolDefinition],
     ) -> LLMRequest {
         let req = req_mutex.lock().await;
-
         let formatted_prompt = Self::build_prompt(system_prompt, &req, tpl, tools);
         let tool_prompt = ToolManager::tool_prompt(tools.to_vec());
 
@@ -313,7 +368,6 @@ impl Agent {
         tools: &[ToolDefinition],
     ) -> String {
         let mut prompt = String::with_capacity(2048);
-
         let _ = write!(
             prompt,
             "{}{}{}",
@@ -354,9 +408,7 @@ impl Agent {
                 }
             }
         }
-
         prompt.push_str(&tpl.assistant_prefix);
-
         prompt
     }
 }

@@ -6,11 +6,11 @@ use crate::llm::engine::LlamaEngine;
 #[cfg(feature = "openai-api")]
 use crate::llm::engine::OpenAIEngine;
 
-use crate::EngineConfig;
 use anyhow::Result;
 use async_trait::async_trait;
 use log::error;
 use tokio::sync::mpsc::Sender;
+use crate::llm::engine::LLMEngineConfig;
 
 #[derive(Clone, Debug)]
 pub struct LLMRequest {
@@ -23,7 +23,7 @@ pub struct LLMRequest {
 #[async_trait]
 pub trait LLMEngineTrait: Send + Sync {
     async fn chat(&mut self, request: LLMRequest) -> Result<String>;
-    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<String>);
+    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String, anyhow::Error>>);
     fn reset_context(&mut self);
 }
 
@@ -32,10 +32,10 @@ pub struct LLMEngine {
 }
 
 impl LLMEngine {
-    pub fn load(cfg: EngineConfig) -> Result<Self> {
+    pub fn load(cfg: LLMEngineConfig) -> Result<Self> {
         match cfg {
             #[cfg(feature = "llama-cpp")]
-            EngineConfig::Llama(llama_cfg) => {
+            LLMEngineConfig::Llama(llama_cfg) => {
                 llama_cfg.validate()?;
 
                 let engine = LlamaEngine::load(llama_cfg).map_err(|e| {
@@ -49,7 +49,7 @@ impl LLMEngine {
             }
 
             #[cfg(feature = "openai-api")]
-            EngineConfig::OpenAI(openai_cfg) => {
+            LLMEngineConfig::OpenAI(openai_cfg) => {
                 openai_cfg.validate()?;
 
                 let engine = OpenAIEngine::load(openai_cfg).map_err(|e| {
@@ -72,7 +72,7 @@ impl LLMEngine {
         self.backend.chat(request).await
     }
 
-    pub async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<String>) {
+    pub async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String, anyhow::Error>>) {
         self.backend.chat_stream(request, tx).await
     }
 

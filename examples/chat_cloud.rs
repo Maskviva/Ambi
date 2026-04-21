@@ -4,7 +4,7 @@ use tokio_stream::StreamExt;
 
 use ambi::llm::chat_template::ChatTemplateType;
 use ambi::Agent;
-use ambi::{EngineConfig, OpenAIEngineConfig};
+use ambi::{LLMEngineConfig, OpenAIEngineConfig};
 
 // ==========================================
 // Helper: Initialize Terminal Logger
@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
 
     // Step 4: Configure the LLM Engine.
     // Here we leave the `llama` configuration empty and specify `open_ai`.
-    let engine_config = EngineConfig::OpenAI(OpenAIEngineConfig {
+    let engine_config = LLMEngineConfig::OpenAI(OpenAIEngineConfig {
         api_key,
         base_url: "https://api.openai.com/v1".to_string(), // Supports OpenAI-compatible APIs
         model_name: "gpt-4o-mini".to_string(),
@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
 
     // Step 5: Instantiate the Agent using the Builder pattern.
     // Inject the dialogue template and system prompt.
-    let mut agent = Agent::make(engine_config)?
+    let mut agent = Agent::make(engine_config).await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt);
 

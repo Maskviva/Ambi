@@ -4,7 +4,7 @@ use tokio_stream::StreamExt;
 
 use ambi::llm::chat_template::ChatTemplateType;
 use ambi::Agent;
-use ambi::{EngineConfig, LlamaEngineConfig};
+use ambi::{LLMEngineConfig, LlamaEngineConfig};
 
 // ==========================================
 // Helper: Initialize Terminal Logger
@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
     let system_prompt = "You are a helpful and harmless AI assistant.";
 
     // Step 3: Configure the Local Llama Engine parameters.
-    let engine_config = EngineConfig::Llama(LlamaEngineConfig {
+    let engine_config = LLMEngineConfig::Llama(LlamaEngineConfig {
         model_path: "C:/your-dir-path/model.gguf".to_string(), // Absolute path to the local GGUF model
         max_tokens: 4096,     // Maximum number of tokens to generate
         buffer_size: 32,      // Output buffer size
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     });
 
     // Step 4: Instantiate the Agent.
-    let mut agent = Agent::make(engine_config)?
+    let mut agent = Agent::make(engine_config).await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt);
 

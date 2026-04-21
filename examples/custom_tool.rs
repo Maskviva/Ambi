@@ -7,7 +7,7 @@ use tokio_stream::StreamExt;
 use ambi::agent::tool::ToolErr;
 use ambi::llm::chat_template::ChatTemplateType;
 use ambi::{Agent, Tool, ToolDefinition};
-use ambi::{EngineConfig, OpenAIEngineConfig};
+use ambi::{LLMEngineConfig, OpenAIEngineConfig};
 
 // ==========================================
 // Part 1: Custom Tool Definition
@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
 
     // Step 3: Configure the Engine (using the Cloud engine as an example).
-    let engine_config = EngineConfig::OpenAI(OpenAIEngineConfig {
+    let engine_config = LLMEngineConfig::OpenAI(OpenAIEngineConfig {
         api_key,
         base_url: "https://api.openai.com/v1".to_string(),
         model_name: "gpt-4o-mini".to_string(),
@@ -86,7 +86,7 @@ async fn main() -> Result<()> {
     });
 
     // Step 4: Instantiate the Agent and **Mount the Custom Tool**.
-    let mut agent = Agent::make(engine_config)?
+    let mut agent = Agent::make(engine_config).await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt)
         .tool(DatePumpTool)?; // <-- Injecting the custom tool here

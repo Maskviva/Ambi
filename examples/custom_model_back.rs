@@ -4,22 +4,21 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tokio::sync::mpsc::Sender;
 
-// 1. 开发者自己定义他们想要的配置和结构体
+// Step 1: Developers define the configurations and structures they want themselves
 struct MyCompanyEngine {
     api_key: String,
-    // ... 他们的专属字段
+    // ... Model's exclusive fields
 }
 
-// 2. 开发者自己实现你的 Trait
+// Step 2: Implement the model's Trait
 #[async_trait]
 impl LLMEngineTrait for MyCompanyEngine {
     async fn chat(&mut self, request: LLMRequest) -> Result<String> {
-        // ... 他们自己的 HTTP 请求逻辑
-        Ok("我们公司的私有模型回答".to_string())
+        Ok("Im a AI assistant".to_string())
     }
 
-    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<String>) {
-        // ... 他们的流式处理
+    async fn chat_stream(&mut self, request: LLMRequest, tx: tokio::sync::mpsc::Sender<Result<String, anyhow::Error>>) {
+        // ... Stream processing
     }
 
     fn reset_context(&mut self) {}
@@ -27,15 +26,14 @@ impl LLMEngineTrait for MyCompanyEngine {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 3. 实例化他们的引擎
+    // Step 3: Instantiate the engine
     let my_engine = Box::new(MyCompanyEngine {
         api_key: "secret".to_string(),
     });
 
-    // 4. 🌟 完美挂载到你的 Agent 上！
-    let mut agent = Agent::with_custom_engine(my_engine)?.preamble("你是公司内部小助手");
+    // Step 4: Mount to your Agent
+    let mut agent = Agent::with_custom_engine(my_engine)?.preamble("who are you");
 
-    // 一切依然完美运转！工具调用、上下文管理全都能用！
     let _ = agent.chat("你好").await;
 
     Ok(())

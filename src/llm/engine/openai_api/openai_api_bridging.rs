@@ -38,7 +38,7 @@ impl OpenAIEngine {
     pub async fn generate_response_stream(
         &self,
         request: LLMRequest,
-        tx: Sender<String>,
+        tx: Sender<Result<String, anyhow::Error>>,
     ) -> Result<()> {
         let mut new_prompt = String::new();
 
@@ -66,7 +66,7 @@ impl OpenAIEngine {
                 Ok(response) => {
                     for choice in response.choices {
                         if let Some(content) = choice.delta.content {
-                            if tx.send(content).await.is_err() {
+                            if tx.send(Ok(content)).await.is_err() {
                                 debug!("The output channel has been closed, terminating OpenAI network stream reception.");
                                 return Ok(());
                             }
@@ -75,6 +75,10 @@ impl OpenAIEngine {
                 }
                 Err(e) => {
                     error!("OpenAI Stream Error: {}", e);
+                    let _ = tx
+                        .send(Err(anyhow::anyhow!("Stream interrupted: {}", e)))
+                        .await;
+                    return Err(e.into());
                 }
             }
         }
@@ -154,13 +158,17 @@ impl OpenAIEngine {
                     );
                 }
                 Message::Tool { content, .. } => {
-                    let tool_result = format!("Tool Result:\n{}", content);
-                    messages.push(
-                        ChatCompletionRequestUserMessageArgs::default()
-                            .content(tool_result)
-                            .build()?
-                            .into(),
+                    let tool_result = format!(
+                        "\n---[TOOL EXECUTION RESULT START]---\n{}\n---[TOOL EXECUTION RESULT END]---\n",
+                        content
                     );
+
+                    let mut user_msg_args = ChatCompletionRequestUserMessageArgs::default();
+                    user_msg_args.content(tool_result);
+
+                    user_msg_args.name("tool_runtime");
+
+                    messages.push(user_msg_args.build()?.into());
                 }
             }
         }

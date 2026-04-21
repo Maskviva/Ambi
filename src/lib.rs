@@ -12,11 +12,12 @@ compile_error!(
 
 pub mod agent;
 pub mod llm;
+pub mod memory;
 
 pub use crate::agent::Agent;
 pub use crate::agent::{Tool, ToolDefinition};
 pub use crate::llm::handler::LLMEngineTrait;
-pub use crate::llm::EngineConfig;
+pub use crate::llm::LLMEngineConfig;
 
 #[cfg(feature = "llama-cpp")]
 pub use crate::llm::LlamaEngineConfig;

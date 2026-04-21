@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use ambi::{Agent, EngineConfig, OpenAIEngineConfig};
+    use ambi::{Agent, LLMEngineConfig, OpenAIEngineConfig};
 
     #[tokio::test]
     async fn test_ollama_local_api() {
@@ -16,9 +16,9 @@ mod tests {
             top_p: 0.9,
         };
 
-        let mut agent = Agent::make(EngineConfig::OpenAI(cfg)).unwrap();
+        let mut agent = Agent::make(LLMEngineConfig::OpenAI(cfg)).await.unwrap();
 
-        let res = agent.chat("who are you").await;
+        let res = agent.chat("who are you").await.unwrap();
 
         println!("{}", res);
     }

@@ -18,17 +18,21 @@ name = "ambi"
 path = "src/lib.rs"
 
 [features]
-default = ["llama-cpp", "openai-api"]
+default = ["openai-api"]
 
 llama-cpp = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
 openai-api = ["dep:async-openai"]
-
-dynamic-link = ["llama-cpp-2/dynamic-link", "llama-cpp-sys-2/dynamic-link"]
-
 cuda = ["llama-cpp", "llama-cpp-2/cuda", "llama-cpp-sys-2/cuda"]
 vulkan = ["llama-cpp", "llama-cpp-2/vulkan", "llama-cpp-sys-2/vulkan"]
 metal = ["llama-cpp", "llama-cpp-2/metal", "llama-cpp-sys-2/metal"]
 rocm = ["llama-cpp", "llama-cpp-2/rocm", "llama-cpp-sys-2/rocm"]
+
+rag = []
+rag-openai = ["rag", "dep:async-openai"]
+rag-text = ["rag"]
+rag-fastembed = ["rag", "dep:fastembed"]
+fastembed-cuda = ["rag-fastembed", "fastembed/cuda"]
+fastembed-metal = ["rag-fastembed", "fastembed/metal"]
 
 [dependencies]
 log = "0.4"
@@ -44,6 +48,8 @@ async-trait = "0.1"
 num_cpus = "1.0"
 anyhow = "1.0"
 futures = "0.3"
+
+fastembed = { version = "5.13.2", optional = true }
 
 [dev-dependencies]
 simplelog = "0.12"
