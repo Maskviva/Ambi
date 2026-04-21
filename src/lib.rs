@@ -12,7 +12,6 @@ compile_error!(
 
 pub mod agent;
 pub mod llm;
-pub mod memory;
 
 pub use crate::agent::Agent;
 pub use crate::agent::{Tool, ToolDefinition};

@@ -129,15 +129,6 @@ impl OpenAIEngine {
             );
         }
 
-        if !request.memory_context.is_empty() {
-            messages.push(
-                ChatCompletionRequestSystemMessageArgs::default()
-                    .content(request.memory_context)
-                    .build()?
-                    .into(),
-            );
-        }
-
         for msg in request.history {
             match msg {
                 Message::System { content } => {

@@ -25,7 +25,7 @@ impl ChatHistory {
         self.messages.clear();
     }
 
-    pub fn evict_for_memory(&mut self, initial_keep: usize, recent_keep: usize) -> Vec<Message> {
+    pub fn evict_old_messages(&mut self, initial_keep: usize, recent_keep: usize) -> Vec<Message> {
         let total = self.messages.len();
 
         if total <= initial_keep + recent_keep {

@@ -6,7 +6,6 @@ use crate::llm::chat_template::{ChatTemplate, ChatTemplateType};
 use crate::llm::handler::LLMRequest;
 use crate::llm::handler::{LLMEngine, LLMEngineTrait};
 use crate::llm::LLMEngineConfig;
-use crate::memory::handler::MemoryManager;
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
@@ -33,7 +32,7 @@ pub struct Agent {
     pub template: ChatTemplate,
     pub tools_def: Arc<Vec<ToolDefinition>>,
     pub tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
-    pub memory: Option<Arc<TokioMutex<MemoryManager>>>,
+    pub on_evict_handler: Option<Arc<dyn Fn(Vec<Message>) + Send + Sync>>,
 }
 
 impl Agent {
@@ -65,7 +64,7 @@ impl Agent {
             template: ChatTemplateType::Chatml.as_template(),
             tools_def: Arc::new(Vec::new()),
             tool_map: Arc::new(HashMap::new()),
-            memory: None,
+            on_evict_handler: None,
         }
     }
 
@@ -81,14 +80,11 @@ impl Agent {
                 return Err(anyhow!("Agent has reached the maximum number of tool call loops ({}), forcibly terminating.", MAX_ITERATIONS));
             }
 
-            let memory_context = Self::retrieve_memory_context(&self.memory, prompt).await;
-
             let req_data = Self::get_llm_request(
                 &self.completion_request,
                 &self.system_prompt,
                 &self.template,
                 &self.tools_def,
-                &memory_context,
             )
             .await;
 
@@ -96,9 +92,9 @@ impl Agent {
 
             Self::append_assistant_message_and_evict(
                 &self.completion_request,
-                &self.memory,
                 target.clone(),
                 res.clone(),
+                &self.on_evict_handler,
             )
             .await;
 
@@ -132,10 +128,11 @@ impl Agent {
 
         let prompt_clone = prompt.to_string();
         let (tx_out, rx_out) = channel::<Result<String, String>>(1024);
+
         let template_clone = self.template.clone();
         let tools_def_clone = Arc::clone(&self.tools_def);
         let tool_map_clone = Arc::clone(&self.tool_map);
-        let memory_clone = self.memory.clone();
+        let evict_handler_clone = self.on_evict_handler.clone();
 
         tokio::spawn(async move {
             let mut target = prompt_clone.clone();
@@ -152,15 +149,11 @@ impl Agent {
                     break;
                 }
 
-                let memory_context =
-                    Self::retrieve_memory_context(&memory_clone, &prompt_clone).await;
-
                 let req_data = Self::get_llm_request(
                     &completion_request,
                     &system_prompt,
                     &template_clone,
                     &tools_def_clone,
-                    &memory_context,
                 )
                 .await;
 
@@ -181,9 +174,9 @@ impl Agent {
 
                 Self::append_assistant_message_and_evict(
                     &completion_request,
-                    &memory_clone,
                     target.clone(),
                     full_output.clone(),
+                    &evict_handler_clone,
                 )
                 .await;
 
@@ -226,11 +219,6 @@ impl Agent {
         self
     }
 
-    pub fn with_memory(mut self, memory_manager: MemoryManager) -> Self {
-        self.memory = Some(Arc::new(TokioMutex::new(memory_manager)));
-        self
-    }
-
     pub fn template(mut self, template_type: ChatTemplateType) -> Self {
         self.template = template_type.as_template();
         self
@@ -257,6 +245,14 @@ impl Agent {
         Ok(self)
     }
 
+    pub fn on_evict<F>(mut self, handler: F) -> Self
+    where
+        F: Fn(Vec<Message>) + Send + Sync + 'static,
+    {
+        self.on_evict_handler = Some(Arc::new(handler));
+        self
+    }
+
     async fn append_user_message(req_mutex: &TokioMutex<CompletionRequest>, prompt: &str) {
         req_mutex
             .lock()
@@ -267,16 +263,17 @@ impl Agent {
 
     async fn append_assistant_message_and_evict(
         req_mutex: &TokioMutex<CompletionRequest>,
-        memory: &Option<Arc<TokioMutex<MemoryManager>>>,
         target: String,
         content: String,
+        handler: &Option<Arc<dyn Fn(Vec<Message>) + Send + Sync>>,
     ) {
         let evicted_msgs = {
             let mut req = req_mutex.lock().await;
             req.chat_history
                 .push(Message::Assistant { target, content });
             req.__requested = true;
-            req.chat_history.evict_for_memory(2, 6)
+
+            req.chat_history.evict_old_messages(2, 6)
         };
 
         if !evicted_msgs.is_empty() {
@@ -284,19 +281,9 @@ impl Agent {
                 "Context truncation: Evicted {} messages.",
                 evicted_msgs.len()
             );
-            if let Some(mem) = memory {
-                let mut mem_lock = mem.lock().await;
-                let combined_text = evicted_msgs
-                    .iter()
-                    .map(|m| format!("{:?}: {}", std::mem::discriminant(m), m.get_text_content()))
-                    .collect::<Vec<_>>()
-                    .join("\n");
 
-                if let Err(e) = mem_lock.add_memory(combined_text).await {
-                    log::error!("Failed to store in memory: {}", e);
-                } else {
-                    log::debug!("Successfully stored evicted context in long-term memory.");
-                }
+            if let Some(h) = handler {
+                h(evicted_msgs);
             }
         }
     }
@@ -352,20 +339,6 @@ impl Agent {
         last_target
     }
 
-    async fn retrieve_memory_context(
-        memory: &Option<Arc<TokioMutex<MemoryManager>>>,
-        query: &str,
-    ) -> String {
-        if let Some(mem) = memory {
-            if let Ok(records) = mem.lock().await.retrieve_memory(query).await {
-                if !records.is_empty() {
-                    return format!("Relevant Past Context:\n---\n{}\n---", records.join("\n\n"));
-                }
-            }
-        }
-        String::new()
-    }
-
     async fn handle_tool_calls(
         req_mutex: &TokioMutex<CompletionRequest>,
         tool_map: &HashMap<String, Arc<dyn DynTool>>,
@@ -396,11 +369,10 @@ impl Agent {
         system_prompt: &str,
         tpl: &ChatTemplate,
         tools: &[ToolDefinition],
-        memory_context: &str,
     ) -> LLMRequest {
         let req = req_mutex.lock().await;
 
-        let formatted_prompt = Self::build_prompt(system_prompt, &req, tpl, tools, memory_context);
+        let formatted_prompt = Self::build_prompt(system_prompt, &req, tpl, tools);
         let tool_prompt = ToolManager::tool_prompt(tools.to_vec());
 
         LLMRequest {
@@ -408,7 +380,6 @@ impl Agent {
             history: req.chat_history.all().to_vec(),
             formatted_prompt,
             tool_prompt,
-            memory_context: memory_context.to_string(),
         }
     }
 
@@ -417,30 +388,24 @@ impl Agent {
         req: &CompletionRequest,
         tpl: &ChatTemplate,
         tools: &[ToolDefinition],
-        memory_context: &str,
     ) -> String {
         let mut prompt = String::with_capacity(2048);
 
         let mut combined_system = system_prompt.to_string();
-        if !memory_context.is_empty() {
+        let tool_content = ToolManager::tool_prompt(tools.to_vec());
+
+        if !tool_content.is_empty() {
             if !combined_system.is_empty() {
                 combined_system.push_str("\n\n");
             }
-            combined_system.push_str(memory_context);
+            combined_system.push_str(&tool_content);
         }
 
-        let _ = write!(
-            prompt,
-            "{}{}{}",
-            tpl.system_prefix, combined_system, tpl.system_suffix
-        );
-
-        let tool_content = ToolManager::tool_prompt(tools.to_vec());
-        if !tool_content.is_empty() {
+        if !combined_system.is_empty() {
             let _ = write!(
                 prompt,
                 "{}{}{}",
-                tpl.system_prefix, tool_content, tpl.system_suffix
+                tpl.system_prefix, combined_system, tpl.system_suffix
             );
         }
 

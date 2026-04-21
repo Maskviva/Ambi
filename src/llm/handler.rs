@@ -16,7 +16,6 @@ pub struct LLMRequest {
     pub system_prompt: String,
     pub history: Vec<Message>,
     pub tool_prompt: String,
-    pub memory_context: String,
     pub formatted_prompt: String,
 }
 
