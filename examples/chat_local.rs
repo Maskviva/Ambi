@@ -2,9 +2,10 @@ use anyhow::Result;
 use std::io::Write;
 use tokio_stream::StreamExt;
 
-use ambi::llm::chat_template::ChatTemplateType;
-use ambi::Agent;
-use ambi::{LLMEngineConfig, LlamaEngineConfig};
+use ambi::llm::providers::llama_cpp::LlamaEngineConfig;
+use ambi::llm::ChatTemplateType;
+use ambi::LLMEngineConfig;
+use ambi::{Agent, ChatPipeline};
 
 // ==========================================
 // Helper: Initialize Terminal Logger

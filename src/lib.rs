@@ -12,14 +12,9 @@ compile_error!(
 
 pub mod agent;
 pub mod llm;
+pub mod types;
 
-pub use crate::agent::Agent;
-pub use crate::agent::{Tool, ToolDefinition};
-pub use crate::llm::handler::LLMEngineTrait;
-pub use crate::llm::LLMEngineConfig;
-
-#[cfg(feature = "llama-cpp")]
-pub use crate::llm::LlamaEngineConfig;
-
-#[cfg(feature = "openai-api")]
-pub use crate::llm::OpenAIEngineConfig;
+pub use agent::core::Agent;
+pub use agent::pipeline::chat::ChatPipeline;
+pub use llm::{LLMEngine, LLMEngineConfig};
+pub use types::message::{ContentPart, Message};

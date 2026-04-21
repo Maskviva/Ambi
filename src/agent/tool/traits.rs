@@ -68,9 +68,11 @@ where
 
     async fn call_json(&self, args: Value) -> Result<Value, ToolErr> {
         let parsed: T::Args = serde_json::from_value(args).map_err(|e| ToolErr(e.to_string()))?;
-
         let result = Tool::call(self, parsed).await?;
-
         serde_json::to_value(result).map_err(|e| ToolErr(e.to_string()))
     }
+}
+
+pub trait ToolCallParser: Send + Sync {
+    fn parse(&self, text: &str) -> Vec<(String, Value)>;
 }

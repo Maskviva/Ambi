@@ -1,12 +1,8 @@
-use anyhow::{anyhow, Result};
-use std::ffi::CStr;
-use std::num::NonZeroU32;
-use std::path::Path;
-use std::sync::mpsc;
-use std::thread;
-use tokio::sync::oneshot;
+#![cfg(feature = "llama-cpp")]
 
-use crate::llm::engine::llama_cpp_2::llama_cpp_2_config::LlamaEngineConfig;
+use crate::llm::{LLMEngineTrait, LLMRequest};
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -17,6 +13,52 @@ use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
 use llama_cpp_sys_2;
 use log::{debug, error, info, trace, warn};
+use serde::Deserialize;
+use std::ffi::CStr;
+use std::num::NonZeroU32;
+use std::path::Path;
+use std::sync::mpsc;
+use std::thread;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::oneshot;
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct LlamaEngineConfig {
+    pub model_path: String,
+    pub max_tokens: i32,
+    pub buffer_size: usize,
+    pub use_gpu: bool,
+    pub n_gpu_layers: u32,
+    pub n_ctx: u32,
+    pub n_tokens: usize,
+    pub n_seq_max: i32,
+    pub penalty_last_n: i32,
+    pub penalty_repeat: f32,
+    pub penalty_freq: f32,
+    pub penalty_present: f32,
+    pub temp: f32,
+    pub top_p: f32,
+    pub seed: u32,
+    pub min_keep: usize,
+}
+
+impl LlamaEngineConfig {
+    pub fn validate(&self) -> Result<()> {
+        if !std::path::Path::new(&self.model_path).exists() {
+            return Err(anyhow!(
+                "Local model file does not exist: {}",
+                self.model_path
+            ));
+        }
+        if self.n_ctx == 0 {
+            return Err(anyhow!("Context n_ctx cannot be 0."));
+        }
+        if self.temp < 0.0 || self.temp > 2.0 {
+            return Err(anyhow!("Temperature must be between 0.0 and 2.0"));
+        }
+        Ok(())
+    }
+}
 
 extern "C" fn llm_engine_log_callback(
     level: llama_cpp_sys_2::ggml_log_level,
@@ -184,11 +226,7 @@ impl LlamaEngine {
             .map_err(|_| anyhow!("Reply channel closed prematurely"))?
     }
 
-    pub async fn stream_internal(
-        &self,
-        prompt: &str,
-        tx: tokio::sync::mpsc::Sender<Result<String, anyhow::Error>>,
-    ) {
+    pub async fn stream_internal(&self, prompt: &str, tx: Sender<Result<String, anyhow::Error>>) {
         let (done_tx, done_rx) = oneshot::channel();
         if self
             .cmd_tx
@@ -319,5 +357,24 @@ impl LlamaEngine {
             decoded_count += 1;
         }
         Ok(())
+    }
+}
+
+#[async_trait]
+impl LLMEngineTrait for LlamaEngine {
+    async fn chat(&mut self, request: LLMRequest) -> Result<String> {
+        self.chat_internal(&request.formatted_prompt).await
+    }
+
+    async fn chat_stream(
+        &mut self,
+        request: LLMRequest,
+        tx: Sender<Result<String, anyhow::Error>>,
+    ) {
+        self.stream_internal(&request.formatted_prompt, tx).await;
+    }
+
+    fn reset_context(&mut self) {
+        self.reset_internal();
     }
 }

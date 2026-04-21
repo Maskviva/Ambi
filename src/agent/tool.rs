@@ -1,5 +1,7 @@
-pub mod tool_manager;
-pub mod tool_trait;
+pub mod manager;
+pub mod parser;
+pub mod traits;
 
-pub use tool_manager::ToolManager;
-pub use tool_trait::{DynTool, Tool, ToolDefinition, ToolErr};
+pub use manager::ToolManager;
+pub use parser::DefaultToolParser;
+pub use traits::{DynTool, Tool, ToolCallParser, ToolDefinition, ToolErr};

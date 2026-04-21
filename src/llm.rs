@@ -1,12 +1,23 @@
-pub mod chat_template;
-pub mod handler;
-
 pub mod engine;
+pub mod providers;
+pub mod template;
 
-#[cfg(feature = "llama-cpp")]
-pub use engine::llama_cpp_2::llama_cpp_2_config::LlamaEngineConfig;
+use crate::types::message::Message;
 
-#[cfg(feature = "openai-api")]
-pub use engine::openai_api::openai_api_config::OpenAIEngineConfig;
+pub use engine::{LLMEngine, LLMEngineTrait};
+pub use template::{ChatTemplate, ChatTemplateType};
 
-pub use engine::LLMEngineConfig;
+#[derive(Clone, Debug)]
+pub struct LLMRequest {
+    pub system_prompt: String,
+    pub history: Vec<Message>,
+    pub tool_prompt: String,
+    pub formatted_prompt: String,
+}
+
+pub enum LLMEngineConfig {
+    #[cfg(feature = "openai-api")]
+    OpenAI(providers::openai_api::OpenAIEngineConfig),
+    #[cfg(feature = "llama-cpp")]
+    Llama(providers::llama_cpp::LlamaEngineConfig),
+}

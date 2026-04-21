@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use ambi::{Agent, LLMEngineConfig, OpenAIEngineConfig};
+    use ambi::llm::providers::openai_api::OpenAIEngineConfig;
+    use ambi::{Agent, ChatPipeline, LLMEngineConfig};
 
     #[tokio::test]
     async fn test_ollama_local_api() {

@@ -1,7 +1,4 @@
-use crate::agent::tool::ToolErr;
-use crate::agent::DynTool;
-use crate::ToolDefinition;
-
+use crate::agent::tool::{DynTool, ToolDefinition, ToolErr};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,45 +18,6 @@ impl ToolManager {
             ));
         }
         prompt
-    }
-
-    pub fn parse_tool_calls(text: &str) -> Vec<(String, Value)> {
-        let mut calls = Vec::new();
-        let mut current_text = text;
-
-        while let Some(start) = current_text.find("[TOOL_CALL]") {
-            let json_start = start + 11;
-
-            if let Some(end_offset) = current_text[json_start..].find("[/TOOL_CALL]") {
-                let end = json_start + end_offset;
-                let mut json_part = current_text[json_start..end].trim();
-
-                if json_part.starts_with("```json") {
-                    json_part = json_part[7..].trim();
-                } else if json_part.starts_with("```") {
-                    json_part = json_part[3..].trim();
-                }
-
-                if json_part.ends_with("```") {
-                    json_part = json_part[..json_part.len() - 3].trim();
-                }
-
-                if let Ok(val) = serde_json::from_str::<Value>(json_part) {
-                    if let (Some(name), Some(args)) =
-                        (val.get("name").and_then(|n| n.as_str()), val.get("args"))
-                    {
-                        calls.push((name.to_string(), args.clone()));
-                    }
-                } else {
-                    log::warn!("Failed to parse TOOL_CALL JSON: {}", json_part);
-                }
-
-                current_text = &current_text[end + 12..];
-            } else {
-                break;
-            }
-        }
-        calls
     }
 
     pub async fn run_tool(

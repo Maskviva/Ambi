@@ -5,10 +5,11 @@ use std::io::Write;
 use tokio_stream::StreamExt;
 
 use ambi::agent::tool::ToolErr;
-use ambi::llm::chat_template::ChatTemplateType;
-use ambi::{Agent, Tool, ToolDefinition};
-use ambi::{LLMEngineConfig, OpenAIEngineConfig};
-
+use ambi::agent::{Tool, ToolDefinition};
+use ambi::llm::providers::openai_api::OpenAIEngineConfig;
+use ambi::llm::ChatTemplateType;
+use ambi::LLMEngineConfig;
+use ambi::{Agent, ChatPipeline};
 // ==========================================
 // Part 1: Custom Tool Definition
 // ==========================================

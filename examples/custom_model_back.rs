@@ -1,8 +1,7 @@
-use ambi::llm::handler::LLMRequest;
-use ambi::{Agent, LLMEngineTrait};
+use ambi::llm::{LLMEngineTrait, LLMRequest};
+use ambi::{Agent, ChatPipeline};
 use anyhow::Result;
 use async_trait::async_trait;
-use tokio::sync::mpsc::Sender;
 
 // Step 1: Developers define the configurations and structures they want themselves
 struct MyCompanyEngine {

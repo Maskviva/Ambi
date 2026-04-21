@@ -1,8 +1,6 @@
-use crate::agent::message::ContentPart;
-use crate::agent::Message;
-use crate::llm::engine::openai_api::openai_api_config::OpenAIEngineConfig;
-use crate::llm::handler::LLMRequest;
-use anyhow::Result;
+use crate::llm::{LLMEngineTrait, LLMRequest};
+use crate::types::message::{ContentPart, Message};
+use anyhow::{anyhow, Result};
 use async_openai::config::OpenAIConfig;
 use async_openai::types::chat::{
     ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
@@ -10,9 +8,32 @@ use async_openai::types::chat::{
     CreateChatCompletionRequest, CreateChatCompletionRequestArgs,
 };
 use async_openai::Client;
+use async_trait::async_trait;
 use futures::StreamExt;
 use log::{debug, error};
+use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct OpenAIEngineConfig {
+    pub api_key: String,
+    pub base_url: String,
+    pub model_name: String,
+    pub temp: f32,
+    pub top_p: f32,
+}
+
+impl OpenAIEngineConfig {
+    pub fn validate(&self) -> Result<()> {
+        if self.api_key.trim().is_empty() {
+            return Err(anyhow!("OpenAI API Key cannot be empty"));
+        }
+        if self.temp < 0.0 || self.temp > 2.0 {
+            return Err(anyhow!("Temperature must be between 0.0 and 2.0"));
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone)]
 pub struct OpenAIEngine {
@@ -75,9 +96,7 @@ impl OpenAIEngine {
                 }
                 Err(e) => {
                     error!("OpenAI Stream Error: {}", e);
-                    let _ = tx
-                        .send(Err(anyhow::anyhow!("Stream interrupted: {}", e)))
-                        .await;
+                    let _ = tx.send(Err(anyhow!("Stream interrupted: {}", e))).await;
                     return Err(e.into());
                 }
             }
@@ -178,5 +197,30 @@ impl OpenAIEngine {
             .build()?;
 
         Ok(request)
+    }
+}
+
+#[async_trait]
+impl LLMEngineTrait for OpenAIEngine {
+    async fn chat(&mut self, request: LLMRequest) -> Result<String> {
+        self.generate_response_sync(request).await.map_err(|e| {
+            error!("OpenAI model generation error: {}", e);
+            anyhow!("OpenAI error: {}", e)
+        })
+    }
+
+    async fn chat_stream(
+        &mut self,
+        request: LLMRequest,
+        tx: Sender<Result<String, anyhow::Error>>,
+    ) {
+        if let Err(e) = self.generate_response_stream(request, tx.clone()).await {
+            error!("OpenAI stream generation error: {}", e);
+            let _ = tx.send(Err(anyhow!("OpenAI API Error: {}", e))).await;
+        }
+    }
+
+    fn reset_context(&mut self) {
+        self.reset_context();
     }
 }
