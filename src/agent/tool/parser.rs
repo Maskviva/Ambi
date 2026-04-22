@@ -64,6 +64,13 @@ impl TagToolParser {
 }
 
 impl ToolCallParser for TagToolParser {
+    fn format_instruction(&self, tools_json: &str) -> String {
+        format!(
+            "You can use tools. Call format:\n{}{{\"name\":\"tool_name\",\"args\":{{...}}}}{}\nAvailable tools:\n{}",
+            self.start_tag, self.end_tag, tools_json
+        )
+    }
+
     fn parse(&self, text: &str) -> Vec<(String, Value)> {
         let mut calls = Vec::new();
         let mut current_text = text;

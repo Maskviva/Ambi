@@ -22,6 +22,36 @@ use std::thread;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 
+/// Configuration settings for the local `llama.cpp` inference engine.
+///
+/// This struct defines the hardware acceleration, context windows, sampling penalties,
+/// and memory allocation parameters required to initialize a local GGUF model via
+/// the `llama-cpp-2` bindings.
+///
+/// # Examples
+///
+/// ```rust
+/// use ambi::llm::providers::llama_cpp::LlamaEngineConfig;
+///
+/// let config = LlamaEngineConfig {
+///     model_path: "./models/llama-3-8b.gguf".to_string(),
+///     max_tokens: 4096,
+///     buffer_size: 32,
+///     use_gpu: true,
+///     n_gpu_layers: 100, // Offload all layers to GPU
+///     n_ctx: 8192,
+///     n_tokens: 512,
+///     n_seq_max: 1,
+///     penalty_last_n: 64,
+///     penalty_repeat: 1.1,
+///     penalty_freq: 0.0,
+///     penalty_present: 0.0,
+///     temp: 0.7,
+///     top_p: 0.9,
+///     seed: 42,
+///     min_keep: 1,
+/// };
+/// ```
 #[derive(Debug, Deserialize, Clone)]
 pub struct LlamaEngineConfig {
     pub model_path: String,

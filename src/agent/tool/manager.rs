@@ -1,4 +1,4 @@
-use crate::agent::tool::{DynTool, ToolDefinition, ToolErr};
+use crate::agent::tool::{DynTool, ToolErr};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -8,18 +8,6 @@ use tokio::time::{sleep, timeout};
 pub struct ToolManager;
 
 impl ToolManager {
-    pub fn tool_prompt(tools: Vec<ToolDefinition>) -> String {
-        let mut prompt = String::new();
-        if !tools.is_empty() {
-            let tools_json = serde_json::to_string(&tools).unwrap_or_default();
-            prompt.push_str(&format!(
-                "You can use tools. Call format:\n[TOOL_CALL]{{\"name\":\"tool_name\",\"args\":{{...}}}}[/TOOL_CALL]\nAvailable tools:\n{}",
-                tools_json
-            ));
-        }
-        prompt
-    }
-
     pub async fn run_tool(
         tool_map: &HashMap<String, Arc<dyn DynTool>>,
         name: String,

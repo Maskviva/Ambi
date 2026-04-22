@@ -15,6 +15,25 @@ use log::{debug, error};
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
 
+/// Configuration settings for OpenAI-compatible cloud APIs.
+///
+/// This configuration is used to connect the Agent to remote endpoints that follow
+/// the standard OpenAI Chat Completions API format. It can be used for OpenAI,
+/// DeepSeek, Groq, or even local proxy servers like Ollama or vLLM.
+///
+/// # Examples
+///
+/// ```rust
+/// use ambi::llm::providers::openai_api::OpenAIEngineConfig;
+///
+/// let config = OpenAIEngineConfig {
+///     api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),
+///     base_url: "[https://api.openai.com/v1](https://api.openai.com/v1)".to_string(),
+///     model_name: "gpt-4o".to_string(),
+///     temp: 0.7,
+///     top_p: 0.95,
+/// };
+/// ```
 #[derive(Debug, Deserialize, Clone)]
 pub struct OpenAIEngineConfig {
     pub api_key: String,

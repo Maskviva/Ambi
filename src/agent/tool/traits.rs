@@ -78,6 +78,7 @@ pub trait StreamFormatter: Send + Sync {
 }
 
 pub trait ToolCallParser: Send + Sync {
+    fn format_instruction(&self, tools_json: &str) -> String;
     fn parse(&self, text: &str) -> Vec<(String, Value)>;
 
     fn create_stream_formatter(&self) -> Box<dyn StreamFormatter>;

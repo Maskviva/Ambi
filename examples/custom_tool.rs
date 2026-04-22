@@ -1,8 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
-use std::io::Write;
-use tokio_stream::StreamExt;
 
 use ambi::agent::tool::ToolErr;
 use ambi::agent::{Tool, ToolDefinition};
@@ -10,27 +8,25 @@ use ambi::llm::providers::openai_api::OpenAIEngineConfig;
 use ambi::llm::ChatTemplateType;
 use ambi::LLMEngineConfig;
 use ambi::{Agent, ChatPipeline};
-// ==========================================
-// Part 1: Custom Tool Definition
-// ==========================================
 
-// 1. Define the arguments required by the tool.
-// Since this tool only retrieves the current time, no external arguments are needed.
+// Step 1: Define the arguments structure for the tool.
+// These parameters will be populated by the LLM when it decides to call the tool.
+// Since we only need the current time, this struct is intentionally empty.
 #[derive(Deserialize)]
 pub struct PumpArgs {}
 
-// 2. Define the tool struct.
+// Step 2: Define the empty struct representing the Tool itself.
 pub struct DatePumpTool;
 
-// 3. Implement the `Tool` trait to make it recognizable and executable by the Agent.
+// Step 3: Implement the `Tool` trait to make it executable by the framework.
 #[async_trait]
 impl Tool for DatePumpTool {
-    // The unique identifier used by the LLM to trigger this tool.
+    // Provide a unique, programmatic name for the LLM to invoke.
     const NAME: &'static str = "get_date";
     type Args = PumpArgs;
     type Output = String;
 
-    // Describe the tool's function and parameter schema (JSON Schema) to the LLM.
+    // Provide the JSON Schema definition that tells the LLM what this tool does and how to use it.
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
             name: Self::NAME.to_string(),
@@ -40,13 +36,14 @@ impl Tool for DatePumpTool {
                 "properties": {},
                 "required": []
             }),
+            // Optionally override the default timeout and retry logic for this specific tool.
             timeout_secs: Some(10),
             max_retries: Some(3),
             is_idempotent: false,
         }
     }
 
-    // The actual execution logic when the tool is invoked.
+    // Define the actual Rust code to execute when the tool is called.
     async fn call(&self, _arg: Self::Args) -> Result<Self::Output, ToolErr> {
         println!("\n[System] Tool 'DatePumpTool' invoked by the LLM...\n");
         let local_time = chrono::Local::now();
@@ -54,31 +51,13 @@ impl Tool for DatePumpTool {
     }
 }
 
-// ==========================================
-// Part 2: Application Entry Point
-// ==========================================
-
-fn init_logger() {
-    use simplelog::*;
-    let _ = TermLogger::init(
-        LevelFilter::Info, // Lower the log level to Info for a cleaner output in this demo
-        Config::default(),
-        TerminalMode::Mixed,
-        ColorChoice::Auto,
-    );
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Step 1: Initialize the logging system.
-    init_logger();
-
-    // Step 2: Set the system prompt.
-    // Crucially, inform the LLM that it has the capability to use tools.
+    // Step 4: Instruct the LLM in the system prompt that it has tool-calling capabilities.
     let system_prompt = "You are a helpful AI assistant with tool-calling capabilities.";
     let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| "test-key".to_string());
 
-    // Step 3: Configure the Engine (using the Cloud engine as an example).
+    // Step 5: Configure the engine.
     let engine_config = LLMEngineConfig::OpenAI(OpenAIEngineConfig {
         api_key,
         base_url: "https://api.openai.com/v1".to_string(),
@@ -87,28 +66,21 @@ async fn main() -> Result<()> {
         top_p: 0.9,
     });
 
-    // Step 4: Instantiate the Agent and **Mount the Custom Tool**.
+    // Step 6: Create the Agent and mount the custom tool using `.tool()`.
     let mut agent = Agent::make(engine_config)
         .await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt)
-        .tool(DatePumpTool)?; // <-- Injecting the custom tool here
+        .tool(DatePumpTool)?;
 
-    // Step 5: Ask a question that explicitly requires the tool to answer correctly.
-    let mut res_stream = agent
-        .chat_stream("What is the current local date and time?")
+    // Step 7: Ask a question that requires real-time data to trigger the tool automatically.
+    let res = agent
+        .chat("What is the current local date and time?")
         .await
         .map_err(|_| anyhow::anyhow!("Failed to create chat stream"))?;
 
-    // Step 6: Consume the stream.
-    // The LLM will automatically halt generation, execute the tool, and resume with the final answer.
-    while let Some(chunk) = res_stream.next().await {
-        if let Ok(text) = chunk {
-            print!("{}", text);
-            let _ = std::io::stdout().flush();
-        }
-    }
+    // Step 8: Print the final answer synthesized by the LLM after observing the tool's output.
+    print!("{}", res);
 
-    println!();
     Ok(())
 }

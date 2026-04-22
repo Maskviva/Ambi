@@ -1,7 +1,7 @@
 use super::{Agent, CompletionRequest};
 use crate::agent::core::history::ChatHistory;
 use crate::agent::tool::{DefaultToolParser, Tool, ToolCallParser, ToolDefinition};
-use crate::llm::{ChatTemplateType, LLMEngine, LLMEngineConfig, LLMEngineTrait};
+use crate::llm::{ChatTemplate, ChatTemplateType, LLMEngine, LLMEngineConfig, LLMEngineTrait};
 use crate::types::message::Message;
 
 use anyhow::{anyhow, Result};
@@ -41,6 +41,7 @@ impl Agent {
             max_iterations: 10,
             enable_formatting: false,
             eviction_strategy: (2, 6, 3000),
+            cached_tool_prompt: String::new(),
         }
     }
 
@@ -64,8 +65,8 @@ impl Agent {
         self
     }
 
-    pub fn template(mut self, template_type: ChatTemplateType) -> Self {
-        self.template = template_type.as_template();
+    pub fn template<T: Into<ChatTemplate>>(mut self, template_source: T) -> Self {
+        self.template = template_source.into();
         self
     }
 
@@ -88,11 +89,15 @@ impl Agent {
 
         self.tools_def = Arc::new(defs);
         self.tool_map = Arc::new(map);
+
+        self.update_cached_tool_prompt();
         Ok(self)
     }
 
     pub fn with_tool_parser<P: ToolCallParser + 'static>(mut self, parser: P) -> Self {
         self.tool_parser = Arc::new(parser);
+
+        self.update_cached_tool_prompt();
         self
     }
 
@@ -102,5 +107,14 @@ impl Agent {
     {
         self.on_evict_handler = Some(Arc::new(handler));
         self
+    }
+
+    fn update_cached_tool_prompt(&mut self) {
+        if self.tools_def.is_empty() {
+            self.cached_tool_prompt = String::new();
+        } else {
+            let tools_json = serde_json::to_string(&*self.tools_def).unwrap_or_default();
+            self.cached_tool_prompt = self.tool_parser.format_instruction(&tools_json);
+        }
     }
 }

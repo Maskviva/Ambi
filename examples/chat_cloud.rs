@@ -1,69 +1,47 @@
 use anyhow::Result;
-use std::io::Write;
-use tokio_stream::StreamExt;
 
+// Import necessary configurations and traits from the Ambi framework.
 use ambi::llm::providers::openai_api::OpenAIEngineConfig;
 use ambi::llm::ChatTemplateType;
 use ambi::LLMEngineConfig;
 use ambi::{Agent, ChatPipeline};
 
-// ==========================================
-// Helper: Initialize Terminal Logger
-// ==========================================
-fn init_logger() {
-    use simplelog::*;
-    let _ = TermLogger::init(
-        LevelFilter::Debug,
-        Config::default(),
-        TerminalMode::Mixed,
-        ColorChoice::Auto,
-    );
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Step 1: Initialize the logger to monitor the internal state of the framework.
-    init_logger();
-
-    // Step 2: Define the system prompt to set the Agent's persona and behavior.
+    // Step 1: Define the system prompt to set the persona and behavior of the AI assistant.
     let system_prompt = "You are a helpful and harmless AI assistant.";
 
-    // Step 3: Safely retrieve the API key from environment variables.
-    // Avoid hardcoding sensitive credentials in your source code.
+    // Step 2: Retrieve the API key securely from environment variables.
+    // Fallback to a default string if the environment variable is not set.
     let api_key =
         std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| "your-default-api-key".to_string());
 
-    // Step 4: Configure the LLM Engine.
-    // Here we leave the `llama` configuration empty and specify `open_ai`.
+    // Step 3: Configure the cloud-based LLM engine.
+    // Here we use the OpenAI API configuration format, which is compatible with many providers.
     let engine_config = LLMEngineConfig::OpenAI(OpenAIEngineConfig {
         api_key,
-        base_url: "https://api.openai.com/v1".to_string(), // Supports OpenAI-compatible APIs
-        model_name: "gpt-4o-mini".to_string(),
-        temp: 0.7,
-        top_p: 0.9,
+        base_url: "https://api.openai.com/v1".to_string(), // The base URL of the API endpoint.
+        model_name: "gpt-4o-mini".to_string(),             // The specific model to use.
+        temp: 0.7,  // Controls randomness (higher is more creative).
+        top_p: 0.9, // Controls diversity via nucleus sampling.
     });
 
-    // Step 5: Instantiate the Agent using the Builder pattern.
-    // Inject the dialogue template and system prompt.
+    // Step 4: Instantiate the Agent using the builder pattern.
+    // We pass the engine configuration, set the chat template, and inject the system prompt.
     let mut agent = Agent::make(engine_config)
         .await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt);
 
-    // Step 6: Initiate an asynchronous streaming chat request.
-    let mut res_stream = agent
-        .chat_stream("Who are you and what can you do?")
+    // Step 5: Initiate a synchronous chat request to the LLM.
+    // The agent will process the prompt, interact with the model, and return the final string.
+    let res = agent
+        .chat("Who are you and what can you do?")
         .await
         .map_err(|_| anyhow::anyhow!("Failed to create chat stream"))?;
 
-    // Step 7: Consume the stream and print data chunks in real-time.
-    while let Some(chunk) = res_stream.next().await {
-        if let Ok(text) = chunk {
-            print!("{}", text);
-            let _ = std::io::stdout().flush(); // Ensure immediate terminal output
-        }
-    }
+    // Step 6: Print the final response received from the model.
+    print!("{}", res);
 
-    println!();
     Ok(())
 }

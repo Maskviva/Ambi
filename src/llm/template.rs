@@ -14,6 +14,18 @@ pub enum ChatTemplateType {
     Llama2,
 }
 
+impl From<ChatTemplateType> for ChatTemplate {
+    fn from(template_type: ChatTemplateType) -> Self {
+        template_type.as_template()
+    }
+}
+
+impl From<&ChatTemplateType> for ChatTemplate {
+    fn from(template_type: &ChatTemplateType) -> Self {
+        template_type.as_template()
+    }
+}
+
 impl ChatTemplateType {
     pub fn as_template(&self) -> ChatTemplate {
         match self {

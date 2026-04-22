@@ -39,11 +39,7 @@ impl ChatHistory {
     }
 
     pub fn estimate_tokens(&self) -> usize {
-        self.messages
-            .iter()
-            .map(|m| m.get_text_content().len())
-            .sum::<usize>()
-            / 4
+        self.messages.iter().map(|m| m.text_len()).sum::<usize>() / 4
     }
 
     pub fn evict_old_messages(
@@ -67,7 +63,7 @@ impl ChatHistory {
         while safe_cut_idx < total {
             let remaining_tokens: usize = self.messages[safe_cut_idx..]
                 .iter()
-                .map(|m| m.get_text_content().len())
+                .map(|m| m.text_len())
                 .sum::<usize>()
                 / 4;
 

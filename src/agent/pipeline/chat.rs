@@ -51,7 +51,7 @@ impl ChatPipeline for Agent {
                 &self.completion_request,
                 &self.system_prompt,
                 &self.template,
-                &self.tools_def,
+                &self.cached_tool_prompt,
             )
             .await;
 
@@ -70,12 +70,10 @@ impl ChatPipeline for Agent {
             let mut dynamic_system_overhead = 0;
             for msg in self.completion_request.lock().await.chat_history.all() {
                 if matches!(**msg, Message::System { .. }) {
-                    dynamic_system_overhead += msg.get_text_content().len() / 4;
+                    dynamic_system_overhead += msg.text_len() / 4;
                 }
             }
-            let prompt_overhead = (self.system_prompt.len()
-                + ToolManager::tool_prompt(self.tools_def.to_vec()).len())
-                / 4
+            let prompt_overhead = (self.system_prompt.len() + self.cached_tool_prompt.len()) / 4
                 + dynamic_system_overhead;
 
             let evicted_count = Self::append_assistant_message_and_evict(
@@ -142,13 +140,13 @@ impl ChatPipeline for Agent {
         let (tx_out, rx_out) = channel::<Result<String, String>>(1024);
 
         let template_clone = self.template.clone();
-        let tools_def_clone = Arc::clone(&self.tools_def);
         let tool_map_clone = Arc::clone(&self.tool_map);
         let tool_parser_clone = Arc::clone(&self.tool_parser);
         let evict_handler_clone = self.on_evict_handler.clone();
         let max_iterations = self.max_iterations;
         let enable_formatting = self.enable_formatting;
         let eviction_strategy = self.eviction_strategy;
+        let cached_tool_prompt = self.cached_tool_prompt.clone();
 
         tokio::spawn(async move {
             Self::append_user_message(&completion_request, &prompt_clone).await;
@@ -170,7 +168,7 @@ impl ChatPipeline for Agent {
                     &completion_request,
                     &system_prompt,
                     &template_clone,
-                    &tools_def_clone,
+                    &cached_tool_prompt,
                 )
                 .await;
 
@@ -199,13 +197,12 @@ impl ChatPipeline for Agent {
                 let mut dynamic_system_overhead = 0;
                 for msg in completion_request.lock().await.chat_history.all() {
                     if matches!(**msg, Message::System { .. }) {
-                        dynamic_system_overhead += msg.get_text_content().len() / 4;
+                        dynamic_system_overhead += msg.text_len() / 4;
                     }
                 }
-                let prompt_overhead = (system_prompt.len()
-                    + ToolManager::tool_prompt(tools_def_clone.to_vec()).len())
-                    / 4
-                    + dynamic_system_overhead;
+
+                let prompt_overhead =
+                    (system_prompt.len() + cached_tool_prompt.len()) / 4 + dynamic_system_overhead;
 
                 let evicted_count = Self::append_assistant_message_and_evict(
                     &completion_request,

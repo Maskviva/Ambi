@@ -10,6 +10,31 @@ impl StreamFormatter for PassThroughFormatter {
     }
 }
 
+/// A stream formatter that intelligently parses and filters output tokens in real-time.
+///
+/// `TagStreamFormatter` is primarily used to intercept and hide internal model reasoning
+/// (such as `<think>` blocks) and tool invocation tags (like `[TOOL_CALL]`) from the final
+/// user-facing output stream. It maintains an internal buffer to handle tokens that are
+/// split across network chunks.
+///
+/// # Examples
+///
+/// ```rust
+/// use ambi::agent::core::formatter::TagStreamFormatter;
+/// use ambi::agent::tool::StreamFormatter;
+///
+/// let mut formatter = TagStreamFormatter::new("[TOOL_CALL]", "[/TOOL_CALL]")
+///     .set_max_buffer_size(8192);
+///
+/// let output1 = formatter.push("Here is the tool: [TOOL");
+/// assert_eq!(output1, ""); // Buffered, waiting for tag completion
+///
+/// let output2 = formatter.push("_CALL]{\"name\":\"get_time\"}[/TOOL_CALL]");
+/// assert_eq!(output2, ""); // Tool call is hidden from the stream
+///
+/// let output3 = formatter.push("Done.");
+/// assert_eq!(output3, "Done.");
+/// ```
 pub struct TagStreamFormatter {
     buffer: String,
     in_tool_call: bool,
