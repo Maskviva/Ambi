@@ -44,7 +44,7 @@ pub struct LlamaEngineConfig {
 
 impl LlamaEngineConfig {
     pub fn validate(&self) -> Result<()> {
-        if !std::path::Path::new(&self.model_path).exists() {
+        if !Path::new(&self.model_path).exists() {
             return Err(anyhow!(
                 "Local model file does not exist: {}",
                 self.model_path
@@ -86,7 +86,7 @@ enum LlamaCommand {
     },
     ChatStream {
         prompt: String,
-        chunk_tx: tokio::sync::mpsc::Sender<Result<String, anyhow::Error>>,
+        chunk_tx: Sender<Result<String, anyhow::Error>>,
         done_tx: oneshot::Sender<()>,
     },
     Reset,
@@ -267,6 +267,14 @@ impl LlamaEngine {
             .map_err(|e| anyhow!("Tokenize failed: {}", e))?;
         let current_tokens = tokens_list.to_vec();
 
+        if current_tokens.len() + cfg.max_tokens as usize >= cfg.n_ctx as usize {
+            return Err(anyhow!(
+                "Prompt size ({}) strictly exceeds configured n_ctx limit ({}).",
+                current_tokens.len(),
+                cfg.n_ctx
+            ));
+        }
+
         let mut match_len = 0;
         for (t1, t2) in history_tokens.iter().zip(current_tokens.iter()) {
             if t1 == t2 {
@@ -282,22 +290,25 @@ impl LlamaEngine {
             *pos = 0;
             match_len = 0;
         }
-
         *pos = match_len as i32;
         let new_tokens = &current_tokens[match_len..];
 
-        batch.clear();
-        let last_idx = (new_tokens.len() as i32) - 1;
+        let chunk_size = batch.n_tokens() as usize;
 
-        for (i, &t) in new_tokens.iter().enumerate() {
-            batch.add(t, *pos, &[0], i as i32 == last_idx)?;
-            *pos += 1;
-        }
+        for chunk in new_tokens.chunks(chunk_size) {
+            batch.clear();
+            let last_idx = (chunk.len() as i32) - 1;
 
-        if !new_tokens.is_empty() {
-            context
-                .decode(batch)
-                .map_err(|e| anyhow!("Decoding failed: {}", e))?;
+            for (i, &t) in chunk.iter().enumerate() {
+                batch.add(t, *pos, &[0], i as i32 == last_idx)?;
+                *pos += 1;
+            }
+
+            if !chunk.is_empty() {
+                context
+                    .decode(batch)
+                    .map_err(|e| anyhow!("Decoding failed: {}", e))?;
+            }
         }
 
         *history_tokens = current_tokens.clone();

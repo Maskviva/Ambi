@@ -15,6 +15,9 @@ pub struct ToolDefinition {
 
     #[serde(skip)]
     pub max_retries: Option<usize>,
+
+    #[serde(skip)]
+    pub is_idempotent: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,7 +34,6 @@ impl Error for ToolErr {}
 #[async_trait]
 pub trait Tool: Send + Sync {
     const NAME: &'static str;
-
     type Args: for<'a> Deserialize<'a>;
     type Output: Serialize;
 
@@ -40,16 +42,13 @@ pub trait Tool: Send + Sync {
     }
 
     fn definition(&self) -> ToolDefinition;
-
     async fn call(&self, args: Self::Args) -> Result<Self::Output, ToolErr>;
 }
 
 #[async_trait]
 pub trait DynTool: Send + Sync {
     fn name(&self) -> String;
-
     fn definition(&self) -> ToolDefinition;
-
     async fn call_json(&self, args: Value) -> Result<Value, ToolErr>;
 }
 
@@ -73,6 +72,13 @@ where
     }
 }
 
+pub trait StreamFormatter: Send + Sync {
+    fn push(&mut self, token: &str) -> String;
+    fn flush(&mut self) -> String;
+}
+
 pub trait ToolCallParser: Send + Sync {
     fn parse(&self, text: &str) -> Vec<(String, Value)>;
+
+    fn create_stream_formatter(&self) -> Box<dyn StreamFormatter>;
 }

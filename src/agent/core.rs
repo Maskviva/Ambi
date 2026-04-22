@@ -19,6 +19,8 @@ pub struct CompletionRequest {
     pub __requested: bool,
 }
 
+pub type EvictionHandler = Arc<dyn Fn(Vec<Arc<Message>>) + Send + Sync>;
+
 pub struct Agent {
     pub completion_request: Arc<TokioMutex<CompletionRequest>>,
     pub llm_engine: Arc<TokioMutex<LLMEngine>>,
@@ -27,6 +29,8 @@ pub struct Agent {
     pub tools_def: Arc<Vec<ToolDefinition>>,
     pub tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
     pub tool_parser: Arc<dyn ToolCallParser>,
-    pub on_evict_handler: Option<Arc<dyn Fn(Vec<Message>) + Send + Sync>>,
+    pub on_evict_handler: Option<EvictionHandler>,
     pub max_iterations: usize,
+    pub enable_formatting: bool,
+    pub eviction_strategy: (usize, usize),
 }

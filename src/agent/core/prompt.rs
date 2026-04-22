@@ -52,22 +52,16 @@ impl Agent {
         }
 
         for msg in req.chat_history.all() {
-            match msg {
-                Message::System { content } => {
-                    let _ = write!(
-                        prompt,
-                        "{}{}{}",
-                        tpl.system_prefix, content, tpl.system_suffix
-                    );
-                }
+            match &**msg {
+                Message::System { .. } => continue,
                 Message::User { .. } => {
                     let text = msg.get_text_content();
                     let _ = write!(prompt, "{}{}{}", tpl.user_prefix, text, tpl.user_suffix);
                 }
-                Message::Tool { content, .. } => {
+                Message::Tool { content } => {
                     let _ = write!(prompt, "{}{}{}", tpl.tool_prefix, content, tpl.tool_suffix);
                 }
-                Message::Assistant { content, .. } => {
+                Message::Assistant { content } => {
                     let _ = write!(
                         prompt,
                         "{}{}{}",

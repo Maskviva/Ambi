@@ -37,10 +37,22 @@ impl Agent {
             template: ChatTemplateType::Chatml.as_template(),
             tools_def: Arc::new(Vec::new()),
             tool_map: Arc::new(HashMap::new()),
-            tool_parser: Arc::new(DefaultToolParser),
+            tool_parser: Arc::new(DefaultToolParser::make()),
             on_evict_handler: None,
             max_iterations: 10,
+            enable_formatting: false,
+            eviction_strategy: (2, 6),
         }
+    }
+
+    pub fn enable_formatting(mut self, enable: bool) -> Self {
+        self.enable_formatting = enable;
+        self
+    }
+
+    pub fn with_eviction_strategy(mut self, keep_head: usize, keep_tail: usize) -> Self {
+        self.eviction_strategy = (keep_head, keep_tail);
+        self
     }
 
     pub fn preamble(mut self, system_prompt: &str) -> Self {
@@ -65,6 +77,7 @@ impl Agent {
                 parameters: def.parameters,
                 timeout_secs: def.timeout_secs,
                 max_retries: def.max_retries,
+                is_idempotent: def.is_idempotent,
             });
             map.insert(def.name, Arc::new(tool));
         }
@@ -81,7 +94,7 @@ impl Agent {
 
     pub fn on_evict<F>(mut self, handler: F) -> Self
     where
-        F: Fn(Vec<Message>) + Send + Sync + 'static,
+        F: Fn(Vec<Arc<Message>>) + Send + Sync + 'static,
     {
         self.on_evict_handler = Some(Arc::new(handler));
         self

@@ -11,8 +11,8 @@ pub enum ContentPart {
 pub enum Message {
     System { content: String },
     User { content: Vec<ContentPart> },
-    Tool { target: String, content: String },
-    Assistant { target: String, content: String },
+    Tool { content: String },
+    Assistant { content: String },
 }
 
 impl Message {
@@ -36,8 +36,8 @@ impl Message {
                 }
                 text
             }
-            Message::Tool { content, .. } => content.clone(),
-            Message::Assistant { content, .. } => content.clone(),
+            Message::Tool { content } => content.clone(),
+            Message::Assistant { content } => content.clone(),
         }
     }
 }

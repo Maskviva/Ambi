@@ -42,6 +42,7 @@ impl Tool for DatePumpTool {
             }),
             timeout_secs: Some(10),
             max_retries: Some(3),
+            is_idempotent: false,
         }
     }
 
