@@ -9,7 +9,7 @@ mod tests {
             std::env::var("TEST_BASE_URL").unwrap_or("https://api.openai.com/v1".to_string());
         let model_name = std::env::var("TEST_MODEL_NAME").unwrap_or("gpt-4o-mini".to_string());
         let api_key = std::env::var("TEST_API_KEY").unwrap_or("test".to_string());
-        
+
         let cfg = OpenAIEngineConfig {
             api_key,
             base_url,

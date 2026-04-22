@@ -1,106 +1,78 @@
 # Ambi 🦀
 
 > [English](./README.md)
+>
+一个完全由 Rust 构建的灵活、高度可定制的 AI Agent 框架。
 
-Ambi 是一个基于 Rust 开发的灵活、可定制的 AI Agent (智能体) 框架。它采用双引擎设计，支持本地模型推理与云端 API
-调用，并提供强大的工具调用（Tool Calling）系统和智能上下文管理能力。
+## 设计理念
 
-## ✨ 核心特性
+Ambi 诞生于对过度复杂的 Agent 框架的不满——那些框架强迫你使用僵化的架构和无尽的配置。
 
-- **双引擎架构 (Dual-Engine)**:
-    - **本地引擎**: 基于 `llama.cpp`，支持 GGUF 模型，兼容 CUDA、Vulkan、Metal 等硬件加速。
-    - **云端引擎**: 完美兼容 OpenAI 规范的 API（如 DeepSeek, SiliconFlow, Groq 等）。
-- **多工具并行调用 (Multi-Tool Calling)**: 能够单次解析并执行模型输出中的多个工具调用指令，大幅提升复杂任务的处理效率。
-- **精细化工具控制**: 支持为每个工具独立配置超时时间 (`timeout_secs`) 和最大重试次数 (`max_retries`)。
-- **内置对话模板**: 原生支持 Chatml, Llama3, Gemma, Deepseek 等主流模型模板，并支持完全自定义模板。
-- **智能记忆截断**: 采用安全的上下文剔除算法，自动寻找对话中的 User 消息作为切割点，防止 Token 溢出的同时确保逻辑连贯。
-- **流式思维链处理**: 自动识别并格式化类似 DeepSeek 的 `<think>` 标签，让 Agent 的推理过程优雅展示。
+- **极简样板代码**：5 行代码即可运行一个可用的 Agent。没有魔法，没有隐藏状态。
+- **特征优先设计**：每个组件都可替换。你可以接入自己的 LLM 后端、工具解析器或执行流水线。
+- **我们造轮子，你造车**：我们处理底层的健壮性问题（OOM 保护、重试、上下文管理），让你专注于应用逻辑。
+- **原生 Rust**：零成本抽象、内存安全和原生性能，为生产级 Agent 而生。
 
-## 📦 安装
+## 核心特性
 
-在你的 `Cargo.toml` 中添加依赖：
+### 双引擎架构
+
+- **本地推理**：基于 `llama.cpp`，支持全硬件加速（CUDA、Vulkan、Metal）
+- **云端 API**：100% 兼容 OpenAI 规范接口（DeepSeek、SiliconFlow、Groq 等）
+- 无需修改 Agent 代码即可在引擎间无缝切换
+
+### 高级工具系统
+
+- 单响应并行多工具调用
+- 单工具独立配置：每个工具可单独设置 `timeout_secs`（超时）和 `max_retries`（最大重试次数）
+- 内置工具幂等性和安全防护
+- 从 Rust 结构体自动生成 JSON Schema
+
+### 智能上下文管理
+
+- 保留对话逻辑的安全上下文驱逐算法
+- 在自然的消息边界进行驱逐，防止令牌溢出
+- 可配置的上下文窗口限制
+
+### 开发者体验
+
+- 原生支持所有主流聊天模板（ChatML、Llama3、Gemma、DeepSeek）
+- 流式推理，自动格式化 `` 等推理标签
+- 完善的错误处理和有意义的错误信息
+- 最少依赖，极快的编译速度
+
+### 生产就绪
+
+- 本地推理 OOM 保护
+- 优雅关闭和资源清理
+- 全面的测试覆盖
+- Apache-2.0 开源许可
+
+## 安装
+
+将以下内容添加到你的 `Cargo.toml`：
 
 ```toml
 [dependencies]
-ambi = "0.1.3"
-
-# 如果你只需要云端 API 支持，可以禁用默认的本地引擎以加快编译
-# ambi = { version = "0.1.3", default-features = false, features = ["openai-api"] }
+ambi = "0.1.5"
 ```
 
-## 🚀 快速开始
+仅使用云端 API（更快编译，无 llama.cpp 依赖）：
 
-### 1. 实例化 Agent
-
-```rust
-use ambi::{Agent, EngineConfig, OpenAIEngineConfig};
-use ambi::llm::chat_template::ChatTemplateType;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let config = EngineConfig::OpenAI(OpenAIEngineConfig {
-        api_key: "your-api-key".into(),
-        base_url: "[https://api.deepseek.com](https://api.deepseek.com)".into(),
-        model_name: "deepseek-chat".into(),
-        temp: 0.7,
-        top_p: 0.9,
-    });
-
-    let mut agent = Agent::make(config)?
-        .template(ChatTemplateType::Deepseek)
-        .preamble("你是一个专业的助手。");
-
-    let response = agent.chat("你好！").await;
-    println!("{}", response);
-
-    Ok(())
-}
+```toml
+ambi = { version = "0.1.5", default-features = false, features = ["openai-api"] }
 ```
 
-### 2. 定义并使用工具
+## 使用方法
 
-```rust
-use ambi::agent::tool::{Tool, ToolDefinition, ToolErr};
-use async_trait::async_trait;
-use serde::Deserialize;
+源代码是最好的文档。请查看 `/examples` 目录获取完整的可运行示例：
 
-#[derive(Deserialize)]
-struct AddArgs {
-    a: f64,
-    b: f64
-}
+- 基础聊天 Agent
+- 自定义工具定义
+- GPU 加速本地推理
+- 流式响应
+- 多工具并行执行
 
-struct AddTool;
+## 许可证
 
-#[async_trait]
-impl Tool for AddTool {
-    const NAME: &'static str = "add";
-    type Args = AddArgs;
-    type Output = f64;
-
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition::new(Self::NAME, "计算两个数字之和")
-            .parameter("a", "number", "第一个加数")
-            .parameter("b", "number", "第二个加数")
-    }
-
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, ToolErr> {
-        Ok(args.a + args.b)
-    }
-}
-
-// 在创建 Agent 时挂载
-// let mut agent = Agent::make(config)?.tool(AddTool)?;
-```
-
-## 🛠️ 硬件加速 (本地模型)
-
-启用对应的 Feature 以获得 GPU 加速：
-
-- **CUDA**: `cargo build --features cuda`
-- **Metal**: `cargo build --features metal`
-- **Vulkan**: `cargo build --features vulkan`
-
-## ⚖️ 开源协议
-
-本项目采用 **Apache-2.0** 协议开源。
+本项目采用 Apache-2.0 许可证开源。
