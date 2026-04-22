@@ -16,6 +16,7 @@ pub struct TagStreamFormatter {
     started: bool,
     start_tag: String,
     end_tag: String,
+    max_buffer_size: usize,
 }
 
 impl TagStreamFormatter {
@@ -26,17 +27,21 @@ impl TagStreamFormatter {
             started: false,
             start_tag: start_tag.to_string(),
             end_tag: end_tag.to_string(),
+            max_buffer_size: 8192,
         }
+    }
+
+    pub fn set_max_buffer_size(mut self, max_buffer_size: usize) -> Self {
+        self.max_buffer_size = max_buffer_size;
+        self
     }
 
     fn process_text(&self, text: &str) -> String {
         text.replace("</think>", "\n\n[Content]: ")
     }
-
     fn is_partial_match(&self, text: &str, tag: &str) -> bool {
         tag.starts_with(text)
     }
-
     fn ends_with_partial_tag(&self, text: &str, tag: &str) -> bool {
         for (i, _) in tag.char_indices().skip(1) {
             if text.ends_with(&tag[..i]) {
@@ -50,12 +55,24 @@ impl TagStreamFormatter {
 impl StreamFormatter for TagStreamFormatter {
     fn push(&mut self, token: &str) -> String {
         self.buffer.push_str(token);
+
+        if self.buffer.len() > self.max_buffer_size {
+            log::error!(
+                "Formatter buffer overflow (>{}). Force flushing to prevent OOM.",
+                self.max_buffer_size
+            );
+            self.buffer.clear();
+            self.in_tool_call = false;
+            self.started = true;
+
+            return "\n\n[Error: Tool output exceeded safety limits and was truncated by the system]\n\n".to_string();
+        }
+
         let mut output = String::new();
 
         loop {
             if !self.started {
                 let trimmed = self.buffer.trim_start();
-
                 if let Some(idx) = self.buffer.find("<think>") {
                     let before = &self.buffer[..idx];
                     output.push_str(before);
@@ -92,14 +109,12 @@ impl StreamFormatter for TagStreamFormatter {
                     self.in_tool_call = true;
                     continue;
                 }
-
                 if self.ends_with_partial_tag(&self.buffer, &self.start_tag)
                     || self.ends_with_partial_tag(&self.buffer, "</think>")
                     || self.ends_with_partial_tag(&self.buffer, "<think>")
                 {
                     break;
                 }
-
                 let safe_text = self.buffer.clone();
                 output.push_str(&self.process_text(&safe_text));
                 self.buffer.clear();

@@ -16,7 +16,6 @@ use tokio::sync::Mutex as TokioMutex;
 #[derive(Serialize, Deserialize)]
 pub struct CompletionRequest {
     pub chat_history: ChatHistory,
-    pub __requested: bool,
 }
 
 pub type EvictionHandler = Arc<dyn Fn(Vec<Arc<Message>>) + Send + Sync>;
@@ -32,5 +31,5 @@ pub struct Agent {
     pub on_evict_handler: Option<EvictionHandler>,
     pub max_iterations: usize,
     pub enable_formatting: bool,
-    pub eviction_strategy: (usize, usize),
+    pub eviction_strategy: (usize, usize, usize),
 }

@@ -22,10 +22,10 @@ Ambi 是一个基于 Rust 开发的灵活、可定制的 AI Agent (智能体) �
 
 ```toml
 [dependencies]
-ambi = "0.1.0"
+ambi = "0.1.3"
 
 # 如果你只需要云端 API 支持，可以禁用默认的本地引擎以加快编译
-# ambi = { version = "0.1.0", default-features = false, features = ["openai-api"] }
+# ambi = { version = "0.1.3", default-features = false, features = ["openai-api"] }
 ```
 
 ## 🚀 快速开始

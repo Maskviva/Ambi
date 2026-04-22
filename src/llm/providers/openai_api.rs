@@ -3,8 +3,9 @@ use crate::types::message::{ContentPart, Message};
 use anyhow::{anyhow, Result};
 use async_openai::config::OpenAIConfig;
 use async_openai::types::chat::{
-    ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
-    ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
+    ChatCompletionMessageToolCalls, ChatCompletionRequestAssistantMessageArgs,
+    ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
+    ChatCompletionRequestToolMessageArgs, ChatCompletionRequestUserMessageArgs,
     CreateChatCompletionRequest, CreateChatCompletionRequestArgs,
 };
 use async_openai::Client;
@@ -150,15 +151,15 @@ impl OpenAIEngine {
             );
         }
 
-        for msg in request.history {
-            match &*msg {
-                Message::System { content } => {
-                    messages.push(
-                        ChatCompletionRequestSystemMessageArgs::default()
-                            .content(content.clone())
-                            .build()?
-                            .into(),
-                    );
+        let mut i = 0;
+
+        while i < request.history.len() {
+            let msg = &request.history[i];
+
+            match &**msg {
+                Message::System { .. } => {
+                    i += 1;
+                    continue;
                 }
                 Message::User { .. } => {
                     messages.push(
@@ -168,26 +169,58 @@ impl OpenAIEngine {
                             .into(),
                     );
                 }
-                Message::Assistant { content, .. } => {
+                Message::Assistant { content } => {
+                    let mut tool_calls = Vec::new();
+                    let mut peek_i = i + 1;
+
+                    while peek_i < request.history.len()
+                        && matches!(&*request.history[peek_i], Message::Tool { .. })
+                    {
+                        let tool_call: ChatCompletionMessageToolCalls =
+                            serde_json::from_value(serde_json::json!({
+                                "id": format!("call_native_{}", peek_i),
+                                "type": "function",
+                                "function": {
+                                    "name": "agent_tool",
+                                    "arguments": "{}"
+                                }
+                            }))
+                            .map_err(|e| anyhow!("Failed to build ToolCall: {}", e))?;
+
+                        tool_calls.push(tool_call);
+                        peek_i += 1;
+                    }
+
+                    if !tool_calls.is_empty() {
+                        messages.push(
+                            ChatCompletionRequestAssistantMessageArgs::default()
+                                .content(content.clone())
+                                .tool_calls(tool_calls)
+                                .build()?
+                                .into(),
+                        );
+                    } else {
+                        messages.push(
+                            ChatCompletionRequestAssistantMessageArgs::default()
+                                .content(content.clone())
+                                .build()?
+                                .into(),
+                        );
+                    }
+                }
+                Message::Tool { content } => {
+                    let tool_call_id = format!("call_native_{}", i);
+
                     messages.push(
-                        ChatCompletionRequestAssistantMessageArgs::default()
+                        ChatCompletionRequestToolMessageArgs::default()
                             .content(content.clone())
+                            .tool_call_id(tool_call_id)
                             .build()?
                             .into(),
                     );
                 }
-                Message::Tool { content, .. } => {
-                    let tool_result = format!(
-                        "\n---[TOOL EXECUTION RESULT START]---\n{}\n---[TOOL EXECUTION RESULT END]---\n",
-                        content
-                    );
-
-                    let mut user_msg_args = ChatCompletionRequestUserMessageArgs::default();
-                    user_msg_args.content(tool_result);
-                    user_msg_args.name("tool_runtime");
-                    messages.push(user_msg_args.build()?.into());
-                }
             }
+            i += 1;
         }
 
         let request = CreateChatCompletionRequestArgs::default()

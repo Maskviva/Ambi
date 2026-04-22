@@ -267,11 +267,23 @@ impl LlamaEngine {
             .map_err(|e| anyhow!("Tokenize failed: {}", e))?;
         let current_tokens = tokens_list.to_vec();
 
-        if current_tokens.len() + cfg.max_tokens as usize >= cfg.n_ctx as usize {
+        if current_tokens.len() >= cfg.n_ctx as usize {
             return Err(anyhow!(
                 "Prompt size ({}) strictly exceeds configured n_ctx limit ({}).",
                 current_tokens.len(),
                 cfg.n_ctx
+            ));
+        }
+
+        let dynamic_max_tokens = std::cmp::min(
+            cfg.max_tokens as usize,
+            (cfg.n_ctx as usize).saturating_sub(current_tokens.len()),
+        );
+
+        if dynamic_max_tokens < 32 {
+            return Err(anyhow!(
+                "Insufficient token space left for generation (only {} tokens). Force context eviction required.",
+                dynamic_max_tokens
             ));
         }
 
@@ -284,30 +296,55 @@ impl LlamaEngine {
             }
         }
 
-        if current_tokens.len() >= cfg.n_ctx as usize || match_len < history_tokens.len() {
-            context.clear_kv_cache();
-            history_tokens.clear();
-            *pos = 0;
-            match_len = 0;
+        if match_len < history_tokens.len() {
+            let evicted_len = history_tokens.len() - match_len;
+            info!(
+                "Evicting {} tokens, applying KV Cache Shift to save Eval cost.",
+                evicted_len
+            );
+
+            let p0 = match_len as u32;
+            let p1 = (match_len + evicted_len) as u32;
+
+            if let Err(e) = context.clear_kv_cache_seq(Some(0), Some(p0), Some(p1)) {
+                warn!("Failed to cleanly remove KV cache sequence: {}", e);
+                context.clear_kv_cache();
+                match_len = 0;
+            } else {
+                if let Err(e) = context.kv_cache_seq_add(0, Some(p1), None, -(evicted_len as i32)) {
+                    warn!(
+                        "Failed to shift KV cache sequence: {}. Falling back to full reset.",
+                        e
+                    );
+                    context.clear_kv_cache();
+                    match_len = 0;
+                } else {
+                    match_len = history_tokens.len() - evicted_len;
+                }
+            }
         }
+
         *pos = match_len as i32;
         let new_tokens = &current_tokens[match_len..];
 
         let chunk_size = batch.n_tokens() as usize;
+        let total_new_tokens = new_tokens.len();
+        let mut processed = 0;
 
         for chunk in new_tokens.chunks(chunk_size) {
             batch.clear();
-            let last_idx = (chunk.len() as i32) - 1;
 
-            for (i, &t) in chunk.iter().enumerate() {
-                batch.add(t, *pos, &[0], i as i32 == last_idx)?;
+            for &t in chunk.iter() {
+                processed += 1;
+                let is_absolute_last = processed == total_new_tokens;
+                batch.add(t, *pos, &[0], is_absolute_last)?;
                 *pos += 1;
             }
 
             if !chunk.is_empty() {
                 context
                     .decode(batch)
-                    .map_err(|e| anyhow!("Decoding failed: {}", e))?;
+                    .map_err(|e| anyhow::anyhow!("Decoding failed: {}", e))?;
             }
         }
 
@@ -331,7 +368,7 @@ impl LlamaEngine {
             let next_token = sampler.sample(context, batch.n_tokens() - 1);
             sampler.accept(next_token);
 
-            if model.is_eog_token(next_token) || decoded_count >= cfg.max_tokens {
+            if model.is_eog_token(next_token) || decoded_count >= dynamic_max_tokens {
                 break;
             }
 

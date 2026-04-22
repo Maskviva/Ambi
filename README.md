@@ -28,10 +28,10 @@ Add Ambi to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ambi = "0.1.0"
+ambi = "0.1.3"
 
 # For cloud-only usage (faster compilation):
-# ambi = { version = "0.1.0", default-features = false, features = ["openai-api"] }
+# ambi = { version = "0.1.3", default-features = false, features = ["openai-api"] }
 ```
 
 ## 🚀 Quick Start

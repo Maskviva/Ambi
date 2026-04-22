@@ -27,7 +27,6 @@ impl Agent {
         let llm_engine = Arc::new(TokioMutex::new(engine));
         let completion_request = Arc::new(TokioMutex::new(CompletionRequest {
             chat_history: ChatHistory::new(),
-            __requested: false,
         }));
 
         Self {
@@ -41,7 +40,7 @@ impl Agent {
             on_evict_handler: None,
             max_iterations: 10,
             enable_formatting: false,
-            eviction_strategy: (2, 6),
+            eviction_strategy: (2, 6, 3000),
         }
     }
 
@@ -50,8 +49,13 @@ impl Agent {
         self
     }
 
-    pub fn with_eviction_strategy(mut self, keep_head: usize, keep_tail: usize) -> Self {
-        self.eviction_strategy = (keep_head, keep_tail);
+    pub fn with_eviction_strategy(
+        mut self,
+        keep_head: usize,
+        keep_tail: usize,
+        max_safe_tokens: usize,
+    ) -> Self {
+        self.eviction_strategy = (keep_head, keep_tail, max_safe_tokens);
         self
     }
 

@@ -3,6 +3,7 @@ use crate::agent::tool::{DynTool, StreamFormatter, ToolCallParser, ToolManager};
 use crate::types::message::Message;
 
 use anyhow::{anyhow, Result};
+use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -23,13 +24,24 @@ pub trait ChatPipeline {
 #[async_trait::async_trait]
 impl ChatPipeline for Agent {
     async fn chat(&mut self, prompt: &str) -> Result<String> {
+        let mut engine = self
+            .llm_engine
+            .try_lock()
+            .map_err(|_| anyhow!("Agent is currently busy processing another request."))?;
+
         Self::append_user_message(&self.completion_request, prompt).await;
+        let mut snapshot_len = self.completion_request.lock().await.chat_history.len();
 
         let mut final_formatted_output = String::new();
         let mut iteration_count = 0;
 
         loop {
             if iteration_count >= self.max_iterations {
+                self.completion_request
+                    .lock()
+                    .await
+                    .chat_history
+                    .truncate(snapshot_len);
                 return Err(anyhow!(
                     "Agent has reached the maximum number of tool call loops."
                 ));
@@ -43,22 +55,38 @@ impl ChatPipeline for Agent {
             )
             .await;
 
-            let res = match self.llm_engine.try_lock() {
-                Ok(mut guard) => guard.chat(req_data).await?,
-                Err(_) => {
-                    return Err(anyhow!(
-                        "Agent is currently busy processing another request."
-                    ))
+            let res = match engine.chat(req_data).await {
+                Ok(r) => r,
+                Err(e) => {
+                    self.completion_request
+                        .lock()
+                        .await
+                        .chat_history
+                        .truncate(snapshot_len);
+                    return Err(e);
                 }
             };
 
-            Self::append_assistant_message_and_evict(
+            let mut dynamic_system_overhead = 0;
+            for msg in self.completion_request.lock().await.chat_history.all() {
+                if matches!(**msg, Message::System { .. }) {
+                    dynamic_system_overhead += msg.get_text_content().len() / 4;
+                }
+            }
+            let prompt_overhead = (self.system_prompt.len()
+                + ToolManager::tool_prompt(self.tools_def.to_vec()).len())
+                / 4
+                + dynamic_system_overhead;
+
+            let evicted_count = Self::append_assistant_message_and_evict(
                 &self.completion_request,
                 res.clone(),
                 &self.on_evict_handler,
                 self.eviction_strategy,
+                prompt_overhead,
             )
             .await;
+            snapshot_len = snapshot_len.saturating_sub(evicted_count);
 
             let mut formatter: Box<dyn StreamFormatter> = if self.enable_formatting {
                 self.tool_parser.create_stream_formatter()
@@ -69,13 +97,25 @@ impl ChatPipeline for Agent {
             final_formatted_output.push_str(&formatter.push(&res));
             final_formatted_output.push_str(&formatter.flush());
 
-            let tool_calls = Self::handle_tool_calls(
+            let tool_calls = match Self::handle_tool_calls(
                 &self.completion_request,
-                &self.tool_map,
+                Arc::clone(&self.tool_map),
                 &self.tool_parser,
                 &res,
+                None,
             )
-            .await?;
+            .await
+            {
+                Ok(calls) => calls,
+                Err(e) => {
+                    self.completion_request
+                        .lock()
+                        .await
+                        .chat_history
+                        .truncate(snapshot_len);
+                    return Err(e);
+                }
+            };
 
             if tool_calls.is_empty() {
                 return Ok(final_formatted_output.trim().to_string());
@@ -90,11 +130,14 @@ impl ChatPipeline for Agent {
         &mut self,
         prompt: &str,
     ) -> Result<Pin<Box<ReceiverStream<Result<String, String>>>>, ()> {
-        let llm_engine = Arc::clone(&self.llm_engine);
+        let mut owned_engine = match Arc::clone(&self.llm_engine).try_lock_owned() {
+            Ok(guard) => guard,
+            Err(_) => return Err(()),
+        };
+
         let completion_request = Arc::clone(&self.completion_request);
         let system_prompt = self.system_prompt.clone();
-
-        Self::append_user_message(&completion_request, prompt).await;
+        let prompt_clone = prompt.to_string();
 
         let (tx_out, rx_out) = channel::<Result<String, String>>(1024);
 
@@ -108,11 +151,18 @@ impl ChatPipeline for Agent {
         let eviction_strategy = self.eviction_strategy;
 
         tokio::spawn(async move {
+            Self::append_user_message(&completion_request, &prompt_clone).await;
+            let mut snapshot_len = completion_request.lock().await.chat_history.len();
             let mut iteration_count = 0;
 
             loop {
                 if iteration_count >= max_iterations {
                     let _ = tx_out.send(Err("Max loops reached.".to_string())).await;
+                    completion_request
+                        .lock()
+                        .await
+                        .chat_history
+                        .truncate(snapshot_len);
                     break;
                 }
 
@@ -123,52 +173,67 @@ impl ChatPipeline for Agent {
                     &tools_def_clone,
                 )
                 .await;
-                let (tx_llm, mut rx_llm) = channel::<Result<String, anyhow::Error>>(1024);
-                let llm_engine_clone = Arc::clone(&llm_engine);
 
-                let llm_task = tokio::spawn(async move {
-                    let mut engine = match llm_engine_clone.try_lock() {
-                        Ok(guard) => guard,
-                        Err(_) => {
-                            let _ = tx_llm.send(Err(anyhow::anyhow!("Agent is busy. Concurrent requests to the same agent instance are not allowed."))).await;
-                            return;
-                        }
-                    };
-                    engine.chat_stream(req_data, tx_llm).await;
-                });
+                let (tx_llm, rx_llm) = channel::<Result<String, anyhow::Error>>(1024);
 
-                let (full_output, has_error) = Self::process_llm_stream(
-                    &mut rx_llm,
+                let process_future = Self::process_llm_stream(
+                    rx_llm,
                     &tx_out,
                     &tool_parser_clone,
                     enable_formatting,
-                )
-                .await;
+                );
+
+                let engine_future = async { owned_engine.chat_stream(req_data, tx_llm).await };
+
+                let (_, (full_output, has_error)) = tokio::join!(engine_future, process_future);
 
                 if has_error {
+                    completion_request
+                        .lock()
+                        .await
+                        .chat_history
+                        .truncate(snapshot_len);
                     break;
                 }
-                let _ = llm_task.await;
 
-                Self::append_assistant_message_and_evict(
+                let mut dynamic_system_overhead = 0;
+                for msg in completion_request.lock().await.chat_history.all() {
+                    if matches!(**msg, Message::System { .. }) {
+                        dynamic_system_overhead += msg.get_text_content().len() / 4;
+                    }
+                }
+                let prompt_overhead = (system_prompt.len()
+                    + ToolManager::tool_prompt(tools_def_clone.to_vec()).len())
+                    / 4
+                    + dynamic_system_overhead;
+
+                let evicted_count = Self::append_assistant_message_and_evict(
                     &completion_request,
                     full_output.clone(),
                     &evict_handler_clone,
                     eviction_strategy,
+                    prompt_overhead,
                 )
                 .await;
+                snapshot_len = snapshot_len.saturating_sub(evicted_count);
 
                 let tool_calls = match Self::handle_tool_calls(
                     &completion_request,
-                    &tool_map_clone,
+                    Arc::clone(&tool_map_clone),
                     &tool_parser_clone,
                     &full_output,
+                    Some(tx_out.clone()),
                 )
                 .await
                 {
                     Ok(calls) => calls,
                     Err(e) => {
                         let _ = tx_out.send(Err(format!("Tool call error: {}", e))).await;
+                        completion_request
+                            .lock()
+                            .await
+                            .chat_history
+                            .truncate(snapshot_len);
                         break;
                     }
                 };
@@ -207,40 +272,41 @@ impl Agent {
         req_mutex: &TokioMutex<CompletionRequest>,
         content: String,
         handler: &Option<EvictionHandler>,
-        eviction_strategy: (usize, usize),
-    ) {
+        eviction_strategy: (usize, usize, usize),
+        prompt_overhead: usize,
+    ) -> usize {
         let evicted_msgs = {
             let mut req = req_mutex.lock().await;
             req.chat_history.push(Message::Assistant { content });
-            req.__requested = true;
-            req.chat_history
-                .evict_old_messages(eviction_strategy.0, eviction_strategy.1)
+            req.chat_history.evict_old_messages(
+                eviction_strategy.0,
+                eviction_strategy.1,
+                eviction_strategy.2,
+                prompt_overhead,
+            )
         };
-        if !evicted_msgs.is_empty() {
-            log::debug!(
-                "Context truncation: Evicted {} messages.",
-                evicted_msgs.len()
-            );
+        let count = evicted_msgs.len();
+        if count > 0 {
+            log::debug!("Context truncation: Evicted {} messages.", count);
             if let Some(h) = handler {
                 h(evicted_msgs);
             }
         }
+        count
     }
 
     async fn process_llm_stream(
-        rx_llm: &mut Receiver<Result<String, anyhow::Error>>,
+        mut rx_llm: Receiver<Result<String, anyhow::Error>>,
         tx_out: &Sender<Result<String, String>>,
         parser: &Arc<dyn ToolCallParser>,
         enable_formatting: bool,
     ) -> (String, bool) {
         let mut full_output = String::with_capacity(1024);
-
         let mut formatter: Box<dyn StreamFormatter> = if enable_formatting {
             parser.create_stream_formatter()
         } else {
             Box::new(crate::agent::core::formatter::PassThroughFormatter)
         };
-
         let mut has_error = false;
 
         while let Some(result) = rx_llm.recv().await {
@@ -276,50 +342,68 @@ impl Agent {
         tool_calls: &[(String, String, String)],
         output_buffer: &mut String,
     ) {
-        for (name, args, tool_msg) in tool_calls {
+        for (name, args, _tool_msg) in tool_calls {
             if name == "__format_error__" {
                 continue;
             }
-
-            let formatted_tool_block = format!(
-                "\n\n[TOOL_CALL]: {}({})\n[TOOL]: {}\n\n",
-                name, args, tool_msg
-            );
+            let formatted_tool_block = format!("\n\n[TOOL_CALL]: {}({})\n\n", name, args);
             output_buffer.push_str(&formatted_tool_block);
         }
     }
 
     async fn handle_tool_calls(
         req_mutex: &TokioMutex<CompletionRequest>,
-        tool_map: &HashMap<String, Arc<dyn DynTool>>,
+        tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
         parser: &Arc<dyn ToolCallParser>,
         assistant_response: &str,
+        tx_out: Option<Sender<Result<String, String>>>,
     ) -> Result<Vec<(String, String, String)>> {
         let calls = parser.parse(assistant_response);
         let mut results = Vec::new();
 
-        for (name, args) in calls {
-            if name == "__format_error__" {
-                let raw_json = args.get("raw").and_then(|v| v.as_str()).unwrap_or("");
-                let error_msg = format!("CRITICAL ERROR: Your tool call format is invalid. You must output perfectly valid JSON. Raw output was: {}", raw_json);
+        let mut stream = stream::iter(calls)
+            .map(move |(name, args)| {
+                let t_map = Arc::clone(&tool_map);
+                let tx_clone = tx_out.clone();
+                async move {
+                    if name == "__format_error__" {
+                        let raw = args.get("raw").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        return (name, args.to_string(), format!("CRITICAL ERROR: Invalid JSON format. Raw: {}", raw));
+                    }
 
-                req_mutex.lock().await.chat_history.push(Message::Tool {
-                    content: error_msg.clone(),
-                });
-                results.push((name, args.to_string(), error_msg));
-                continue;
+                    let run_future = ToolManager::run_tool(&t_map, name.clone(), &args);
+
+                    tokio::select! {
+                        res = run_future => {
+                            let msg = res.unwrap_or_else(|e| format!("Failed to execute '{}': {}", name, e));
+                            (name, args.to_string(), msg)
+                        }
+                        _ = async {
+                            if let Some(tx) = tx_clone {
+                                tx.closed().await;
+                            } else {
+                                std::future::pending::<()>().await;
+                            }
+                        } => {
+                            log::error!("Client disconnected. Aborting ghost tool execution: {}", name);
+                            (name, args.to_string(), "CRITICAL ERROR: Client disconnected".to_string())
+                        }
+                    }
+                }
+            })
+            .buffered(5);
+
+        while let Some((name, args_str, msg)) = stream.next().await {
+            if msg.contains("CRITICAL ERROR: Client disconnected") {
+                return Err(anyhow!("Client disconnected during tool execution"));
             }
 
-            let tool_result = ToolManager::run_tool(tool_map, name.clone(), &args).await;
-            let tool_msg =
-                tool_result.unwrap_or_else(|e| format!("Failed to execute tool '{}': {}", name, e));
-
             req_mutex.lock().await.chat_history.push(Message::Tool {
-                content: tool_msg.clone(),
+                content: msg.clone(),
             });
-
-            results.push((name, args.to_string(), tool_msg));
+            results.push((name, args_str, msg));
         }
+
         Ok(results)
     }
 }

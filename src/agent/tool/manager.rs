@@ -39,29 +39,35 @@ impl ToolManager {
                     return serde_json::to_string(&result).map_err(|e| ToolErr(e.to_string()));
                 }
                 Ok(Err(e)) => {
-                    if !def.is_idempotent {
-                        return Err(e);
-                    }
-                    retries = retries.saturating_sub(1);
-                    if retries == 0 {
-                        return Err(e);
-                    }
-                    log::warn!("Tool '{}' execution error, retrying...", name);
-                    sleep(Duration::from_millis(500)).await;
+                    log::warn!(
+                        "Tool '{}' returned a deterministic error: {}. Aborting immediately.",
+                        name,
+                        e
+                    );
+                    return Err(e);
                 }
                 Err(_) => {
                     if !def.is_idempotent {
                         return Err(ToolErr(format!(
-                            "Tool '{}' timed out ({}s). Not retrying because it is NOT idempotent.",
+                            "Tool '{}' execution timed out ({}s). Not idempotent, aborting immediately.",
+                            name, timeout_duration.as_secs()
+                        )));
+                    }
+
+                    retries = retries.saturating_sub(1);
+                    if retries == 0 {
+                        return Err(ToolErr(format!(
+                            "Tool '{}' execution timed out ({}s)",
                             name,
                             timeout_duration.as_secs()
                         )));
                     }
-                    retries = retries.saturating_sub(1);
-                    if retries == 0 {
-                        return Err(ToolErr(format!("Tool '{}' execution timed out", name)));
-                    }
-                    log::warn!("Tool '{}' execution timed out, retrying...", name);
+                    log::warn!(
+                        "Tool '{}' execution timed out, retrying... ({} attempts remaining)",
+                        name,
+                        retries
+                    );
+                    sleep(Duration::from_millis(500)).await;
                 }
             }
         }
