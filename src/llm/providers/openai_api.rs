@@ -63,10 +63,12 @@ impl OpenAIEngine {
     ) -> Result<()> {
         let mut new_prompt = String::new();
 
-        if let Some(Message::User { content }) = request.history.last() {
-            for part in content {
-                if let ContentPart::Text { text } = part {
-                    new_prompt.push_str(text);
+        if let Some(msg) = request.history.last() {
+            if let Message::User { content } = &**msg {
+                for part in content {
+                    if let ContentPart::Text { text } = part {
+                        new_prompt.push_str(text);
+                    }
                 }
             }
         }
@@ -149,11 +151,11 @@ impl OpenAIEngine {
         }
 
         for msg in request.history {
-            match msg {
+            match &*msg {
                 Message::System { content } => {
                     messages.push(
                         ChatCompletionRequestSystemMessageArgs::default()
-                            .content(content)
+                            .content(content.clone())
                             .build()?
                             .into(),
                     );
@@ -169,7 +171,7 @@ impl OpenAIEngine {
                 Message::Assistant { content, .. } => {
                     messages.push(
                         ChatCompletionRequestAssistantMessageArgs::default()
-                            .content(content)
+                            .content(content.clone())
                             .build()?
                             .into(),
                     );

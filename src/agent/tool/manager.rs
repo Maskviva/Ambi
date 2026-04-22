@@ -39,31 +39,29 @@ impl ToolManager {
                     return serde_json::to_string(&result).map_err(|e| ToolErr(e.to_string()));
                 }
                 Ok(Err(e)) => {
+                    if !def.is_idempotent {
+                        return Err(e);
+                    }
                     retries = retries.saturating_sub(1);
                     if retries == 0 {
                         return Err(e);
                     }
-                    log::warn!(
-                        "Tool '{}' execution error, retrying... ({} attempts remaining)",
-                        name,
-                        retries
-                    );
+                    log::warn!("Tool '{}' execution error, retrying...", name);
                     sleep(Duration::from_millis(500)).await;
                 }
                 Err(_) => {
-                    retries = retries.saturating_sub(1);
-                    if retries == 0 {
+                    if !def.is_idempotent {
                         return Err(ToolErr(format!(
-                            "Tool '{}' execution timed out ({}s)",
+                            "Tool '{}' timed out ({}s). Not retrying because it is NOT idempotent.",
                             name,
                             timeout_duration.as_secs()
                         )));
                     }
-                    log::warn!(
-                        "Tool '{}' execution timed out, retrying... ({} attempts remaining)",
-                        name,
-                        retries
-                    );
+                    retries = retries.saturating_sub(1);
+                    if retries == 0 {
+                        return Err(ToolErr(format!("Tool '{}' execution timed out", name)));
+                    }
+                    log::warn!("Tool '{}' execution timed out, retrying...", name);
                 }
             }
         }

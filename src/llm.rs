@@ -3,6 +3,7 @@ pub mod providers;
 pub mod template;
 
 use crate::types::message::Message;
+use std::sync::Arc;
 
 pub use engine::{LLMEngine, LLMEngineTrait};
 pub use template::{ChatTemplate, ChatTemplateType};
@@ -10,7 +11,7 @@ pub use template::{ChatTemplate, ChatTemplateType};
 #[derive(Clone, Debug)]
 pub struct LLMRequest {
     pub system_prompt: String,
-    pub history: Vec<Message>,
+    pub history: Vec<Arc<Message>>,
     pub tool_prompt: String,
     pub formatted_prompt: String,
 }
