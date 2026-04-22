@@ -1,7 +1,9 @@
-#[cfg(all(test, feature = "llama-cpp"))]
+#[cfg(all(test))]
 mod tests {
     use ambi::llm::providers::llama_cpp::LlamaEngineConfig;
     use ambi::{Agent, ChatPipeline, LLMEngineConfig};
+    use std::io::Write;
+    use tokio_stream::StreamExt;
 
     #[tokio::test]
     async fn test_local_chat() {
@@ -26,10 +28,20 @@ mod tests {
             min_keep: 1,
         };
 
+        println!("1");
         let mut agent = Agent::make(LLMEngineConfig::Llama(cfg)).await.unwrap();
 
-        let res = agent.chat("who are you").await.unwrap();
+        println!("2");
+        let mut res_stream = agent.chat_stream("who are you").await.unwrap();
 
-        println!("{}", res);
+        println!("3");
+        while let Some(chunk) = res_stream.next().await {
+            if let Ok(text) = chunk {
+                print!("{}", text);
+                let _ = std::io::stdout().flush();
+            }
+        }
+
+        println!("aaaaaaaaaaaaaaaaaaa");
     }
 }

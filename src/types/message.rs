@@ -30,7 +30,7 @@ impl Message {
             Message::Assistant { content } => content.len(),
         }
     }
-    
+
     pub fn write_text_to(&self, buf: &mut String) {
         match self {
             Message::System { content } => buf.push_str(content),
@@ -45,7 +45,7 @@ impl Message {
             Message::Assistant { content } => buf.push_str(content),
         }
     }
-    
+
     pub fn user_text(text: &str) -> Self {
         Self::User {
             content: vec![ContentPart::Text {

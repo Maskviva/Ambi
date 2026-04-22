@@ -357,7 +357,7 @@ impl LlamaEngine {
         *pos = match_len as i32;
         let new_tokens = &current_tokens[match_len..];
 
-        let chunk_size = batch.n_tokens() as usize;
+        let chunk_size = cfg.n_tokens;
         let total_new_tokens = new_tokens.len();
         let mut processed = 0;
 

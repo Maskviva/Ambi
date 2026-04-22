@@ -26,12 +26,17 @@ impl StreamFormatter for PassThroughFormatter {
 /// let mut formatter = TagStreamFormatter::new("[TOOL_CALL]", "[/TOOL_CALL]")
 ///     .set_max_buffer_size(8192);
 ///
+/// // First push: Detected plain text, automatically output with [Content]: prefix.
+/// // But because the end contains part of the tag "[TOOL", the main text was retained in the buffer waiting for closure.
 /// let output1 = formatter.push("Here is the tool: [TOOL");
-/// assert_eq!(output1, ""); // Buffered, waiting for tag completion
+/// assert_eq!(output1, "[Content]: ");
 ///
+/// // Second push: Tag closed, tool content hidden.
+/// // Previously intercepted 'Here is the tool: ' has been safely released.
 /// let output2 = formatter.push("_CALL]{\"name\":\"get_time\"}[/TOOL_CALL]");
-/// assert_eq!(output2, ""); // Tool call is hidden from the stream
+/// assert_eq!(output2, "Here is the tool: ");
 ///
+/// // Third push: ordinary text is passed through directly.
 /// let output3 = formatter.push("Done.");
 /// assert_eq!(output3, "Done.");
 /// ```
