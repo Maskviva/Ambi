@@ -15,6 +15,10 @@ pub trait LLMEngineTrait: Send + Sync {
     async fn chat(&mut self, request: LLMRequest) -> Result<String>;
     async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String, anyhow::Error>>);
     fn reset_context(&mut self);
+
+    async fn evaluate_sentence_entropy(&mut self, _sentence: &str) -> Result<f32> {
+        Err(anyhow::anyhow!("The current engine backend does not support entropy evaluation. Local Llama-cpp engine is required."))
+    }
 }
 
 pub struct LLMEngine {
@@ -67,5 +71,9 @@ impl LLMEngine {
 
     pub fn reset_context(&mut self) {
         self.backend.reset_context();
+    }
+
+    pub async fn evaluate_sentence_entropy(&mut self, sentence: &str) -> Result<f32> {
+        self.backend.evaluate_sentence_entropy(sentence).await
     }
 }

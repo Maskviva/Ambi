@@ -64,3 +64,11 @@ pub struct Agent {
     pub eviction_strategy: (usize, usize, usize),
     pub cached_tool_prompt: String,
 }
+
+impl Agent {
+    #[cfg(feature = "llama-cpp")]
+    pub async fn evaluate_sentence_entropy(&self, sentence: &str) -> anyhow::Result<f32> {
+        let mut engine = self.llm_engine.lock().await;
+        engine.evaluate_sentence_entropy(sentence).await
+    }
+}

@@ -120,6 +120,10 @@ enum LlamaCommand {
         done_tx: oneshot::Sender<()>,
     },
     Reset,
+    EvaluateEntropy {
+        sentence: String,
+        reply_tx: oneshot::Sender<Result<f32>>,
+    },
 }
 
 pub struct LlamaEngine {
@@ -231,6 +235,16 @@ impl LlamaEngine {
                         utf8_buffer.clear();
                         batch.clear();
                         pos = 0;
+                    }
+                    LlamaCommand::EvaluateEntropy { sentence, reply_tx } => {
+                        let res = Self::run_evaluate_entropy(
+                            &sentence,
+                            &model,
+                            &mut context,
+                            &mut batch,
+                            &mut pos,
+                        );
+                        let _ = reply_tx.send(res);
                     }
                 }
             }
@@ -436,6 +450,57 @@ impl LlamaEngine {
         }
         Ok(())
     }
+
+    pub async fn evaluate_sentence_entropy_internal(&self, sentence: &str) -> Result<f32> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.cmd_tx
+            .send(LlamaCommand::EvaluateEntropy {
+                sentence: sentence.to_string(),
+                reply_tx,
+            })
+            .map_err(|_| anyhow!("Llama Engine thread died unexpectedly"))?;
+        reply_rx
+            .await
+            .map_err(|_| anyhow!("Reply channel closed prematurely"))?
+    }
+
+    fn run_evaluate_entropy(
+        sentence: &str,
+        model: &LlamaModel,
+        context: &mut LlamaContext,
+        batch: &mut LlamaBatch,
+        pos: &mut i32,
+    ) -> Result<f32> {
+        let tokens_list = model
+            .str_to_token(sentence, AddBos::Always)
+            .map_err(|e| anyhow!("Tokenize failed: {}", e))?;
+        let tokens = tokens_list.to_vec();
+
+        if tokens.is_empty() {
+            return Ok(0.0);
+        }
+
+        batch.clear();
+        for (i, &t) in tokens.iter().enumerate() {
+            batch.add(t, *pos + i as i32, &[0], true)?;
+        }
+
+        context
+            .decode(batch)
+            .map_err(|e| anyhow::anyhow!("Decoding failed: {}", e))?;
+
+        let mut total_entropy = 0.0;
+
+        for i in 0..tokens.len() {
+            let logits_slice = context.get_logits_ith(i as i32);
+
+            total_entropy += calculate_token_entropy(logits_slice);
+        }
+
+        *pos += tokens.len() as i32;
+
+        Ok(total_entropy / tokens.len() as f32)
+    }
 }
 
 #[async_trait]
@@ -455,4 +520,27 @@ impl LLMEngineTrait for LlamaEngine {
     fn reset_context(&mut self) {
         self.reset_internal();
     }
+
+    async fn evaluate_sentence_entropy(&mut self, sentence: &str) -> Result<f32> {
+        self.evaluate_sentence_entropy_internal(sentence).await
+    }
+}
+
+fn calculate_token_entropy(logits: &[f32]) -> f32 {
+    let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let mut sum_exp = 0.0;
+    let mut exps = Vec::with_capacity(logits.len());
+    for &l in logits {
+        let exp = (l - max_logit).exp();
+        exps.push(exp);
+        sum_exp += exp;
+    }
+    let mut entropy = 0.0;
+    for exp in exps {
+        let p = exp / sum_exp;
+        if p > 1e-7 {
+            entropy -= p * p.ln();
+        }
+    }
+    entropy
 }

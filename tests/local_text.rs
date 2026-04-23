@@ -13,7 +13,7 @@ mod tests {
             model_path,
             max_tokens: 2048,
             buffer_size: 32,
-            use_gpu: false,
+            use_gpu: true,
             n_gpu_layers: 99,
             n_ctx: 4096,
             n_tokens: 4096,
@@ -22,7 +22,7 @@ mod tests {
             penalty_repeat: 1.1,
             penalty_freq: 0.0,
             penalty_present: 0.0,
-            temp: 0.1,
+            temp: 0.7,
             top_p: 0.9,
             seed: 299792458,
             min_keep: 1,
@@ -30,13 +30,24 @@ mod tests {
 
         let mut agent = Agent::make(LLMEngineConfig::Llama(cfg)).await.unwrap();
 
-        let mut res_stream = agent.chat_stream("who are you").await.unwrap();
+        let mut res_stream = agent
+            .chat_stream("afegrhtnmnd4aw684fv6e54sf1c35g4rv6e5rsf46ew54g1vw6e534")
+            .await
+            .unwrap();
+        let mut res_buffe = String::new();
 
         while let Some(chunk) = res_stream.next().await {
             if let Ok(text) = chunk {
                 print!("{}", text);
+                res_buffe += &*text;
                 let _ = std::io::stdout().flush();
             }
         }
+
+        println!();
+
+        let entropy = agent.evaluate_sentence_entropy(&*res_buffe).await.unwrap();
+
+        println!("{}", entropy)
     }
 }
