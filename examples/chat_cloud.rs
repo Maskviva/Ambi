@@ -1,10 +1,10 @@
 use anyhow::Result;
 
 // Import necessary configurations and traits from the Ambi framework.
-use ambi::llm::providers::openai_api::OpenAIEngineConfig;
 use ambi::llm::ChatTemplateType;
+use ambi::types::config::OpenAIEngineConfig;
 use ambi::LLMEngineConfig;
-use ambi::{Agent, ChatPipeline};
+use ambi::{Agent, ChatRunner};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -35,10 +35,7 @@ async fn main() -> Result<()> {
 
     // Step 5: Initiate a synchronous chat request to the LLM.
     // The agent will process the prompt, interact with the model, and return the final string.
-    let res = agent
-        .chat("Who are you and what can you do?")
-        .await
-        .map_err(|_| anyhow::anyhow!("Failed to create chat stream"))?;
+    let res = ChatRunner::chat(&mut agent, "Who are you and what can you do?").await?;
 
     // Step 6: Print the final response received from the model.
     print!("{}", res);

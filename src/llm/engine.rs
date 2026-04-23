@@ -1,5 +1,6 @@
-use crate::llm::{LLMEngineConfig, LLMRequest};
-use anyhow::Result;
+// src/llm/engine.rs
+use crate::error::{AmbiError, Result};
+use crate::llm::LLMEngineConfig;
 use async_trait::async_trait;
 use log::error;
 use tokio::sync::mpsc::Sender;
@@ -9,15 +10,18 @@ use crate::llm::providers::llama_cpp::LlamaEngine;
 
 #[cfg(feature = "openai-api")]
 use crate::llm::providers::openai_api::OpenAIEngine;
+use crate::types::LLMRequest;
 
 #[async_trait]
 pub trait LLMEngineTrait: Send + Sync {
     async fn chat(&mut self, request: LLMRequest) -> Result<String>;
-    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String, anyhow::Error>>);
+    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String>>);
     fn reset_context(&mut self);
 
     async fn evaluate_sentence_entropy(&mut self, _sentence: &str) -> Result<f32> {
-        Err(anyhow::anyhow!("The current engine backend does not support entropy evaluation. Local Llama-cpp engine is required."))
+        Err(AmbiError::EngineError(
+            "The current engine backend does not support entropy evaluation. Local Llama-cpp engine is required.".to_string()
+        ))
     }
 }
 
@@ -33,7 +37,7 @@ impl LLMEngine {
                 llama_cfg.validate()?;
                 let engine = LlamaEngine::load(llama_cfg).map_err(|e| {
                     error!("Failed to load Llama engine: {}", e);
-                    anyhow::anyhow!("Failed to load Llama engine: {}", e)
+                    AmbiError::EngineError(format!("Failed to load Llama engine: {}", e))
                 })?;
                 Ok(LLMEngine {
                     backend: Box::new(engine),
@@ -44,7 +48,7 @@ impl LLMEngine {
                 openai_cfg.validate()?;
                 let engine = OpenAIEngine::load(openai_cfg).map_err(|e| {
                     error!("Failed to load OpenAI engine: {}", e);
-                    anyhow::anyhow!("Failed to load OpenAI engine: {}", e)
+                    AmbiError::EngineError(format!("Failed to load OpenAI engine: {}", e))
                 })?;
                 Ok(LLMEngine {
                     backend: Box::new(engine),
@@ -61,11 +65,7 @@ impl LLMEngine {
         self.backend.chat(request).await
     }
 
-    pub async fn chat_stream(
-        &mut self,
-        request: LLMRequest,
-        tx: Sender<Result<String, anyhow::Error>>,
-    ) {
+    pub async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String>>) {
         self.backend.chat_stream(request, tx).await
     }
 

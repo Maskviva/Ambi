@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use ambi::llm::providers::openai_api::OpenAIEngineConfig;
-    use ambi::{Agent, ChatPipeline, LLMEngineConfig};
+    use ambi::types::config::OpenAIEngineConfig;
+    use ambi::{Agent, ChatRunner, LLMEngineConfig};
 
     #[tokio::test]
     async fn test_ollama_local_api() {
@@ -20,7 +20,7 @@ mod tests {
 
         let mut agent = Agent::make(LLMEngineConfig::OpenAI(cfg)).await.unwrap();
 
-        let res = agent.chat("who are you").await.unwrap();
+        let res = ChatRunner::chat(&mut agent, "who are you").await.unwrap();
 
         println!("{}", res);
     }

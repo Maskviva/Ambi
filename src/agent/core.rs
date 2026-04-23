@@ -1,11 +1,13 @@
+// src/agent/core.rs
 pub mod builder;
+pub mod context;
 pub mod formatter;
-pub mod history;
 pub mod prompt;
 
-use crate::agent::core::history::ChatHistory;
+use crate::agent::core::context::ChatHistory;
 use crate::agent::tool::{DynTool, ToolCallParser, ToolDefinition};
-use crate::llm::{ChatTemplate, LLMEngine};
+use crate::llm::LLMEngine;
+use crate::types::config::AgentConfig;
 use crate::types::message::Message;
 
 use serde::{Deserialize, Serialize};
@@ -34,7 +36,7 @@ pub type EvictionHandler = Arc<dyn Fn(Vec<Arc<Message>>) + Send + Sync>;
 /// use ambi::llm::ChatTemplateType;
 ///
 /// #[tokio::main]
-/// async fn main() -> anyhow::Result<()> {
+/// async fn main() -> Result<()> {
 ///     let config = LLMEngineConfig::OpenAI(OpenAIEngineConfig {
 ///         api_key: "your-api-key".to_string(),
 ///         base_url: "[https://api.openai.com/v1](https://api.openai.com/v1)".to_string(),
@@ -46,28 +48,27 @@ pub type EvictionHandler = Arc<dyn Fn(Vec<Arc<Message>>) + Send + Sync>;
 ///     let mut agent = Agent::make(config).await?
 ///         .preamble("You are a helpful AI assistant.")
 ///         .template(ChatTemplateType::Chatml);
-///     
+///
 ///     Ok(())
 /// }
 /// ```
 pub struct Agent {
     pub completion_request: Arc<TokioMutex<CompletionRequest>>,
     pub llm_engine: Arc<TokioMutex<LLMEngine>>,
-    pub system_prompt: String,
-    pub template: ChatTemplate,
+
+    pub config: AgentConfig,
+
     pub tools_def: Arc<Vec<ToolDefinition>>,
     pub tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
     pub tool_parser: Arc<dyn ToolCallParser>,
+
     pub on_evict_handler: Option<EvictionHandler>,
-    pub max_iterations: usize,
-    pub enable_formatting: bool,
-    pub eviction_strategy: (usize, usize, usize),
     pub cached_tool_prompt: String,
 }
 
 impl Agent {
     #[cfg(feature = "llama-cpp")]
-    pub async fn evaluate_sentence_entropy(&self, sentence: &str) -> anyhow::Result<f32> {
+    pub async fn evaluate_sentence_entropy(&self, sentence: &str) -> crate::error::Result<f32> {
         let mut engine = self.llm_engine.lock().await;
         engine.evaluate_sentence_entropy(sentence).await
     }

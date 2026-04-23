@@ -49,13 +49,13 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ambi = "0.1.6"
+ambi = "0.1.7"
 ```
 
 For cloud-only usage (faster compilation, no llama.cpp dependency):
 
 ```toml
-ambi = { version = "0.1.5", default-features = false, features = ["openai-api"] }
+ambi = { version = "0.1.7", default-features = false, features = ["openai-api"] }
 ```
 
 ## Usage

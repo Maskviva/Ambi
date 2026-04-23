@@ -1,6 +1,8 @@
 use super::{Agent, CompletionRequest};
-use crate::llm::{ChatTemplate, LLMRequest};
+use crate::agent::ToolDefinition;
+use crate::llm::ChatTemplate;
 use crate::types::message::Message;
+use crate::types::LLMRequest;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
@@ -9,6 +11,7 @@ impl Agent {
         req_mutex: &TokioMutex<CompletionRequest>,
         system_prompt: &str,
         tpl: &ChatTemplate,
+        tools: &[ToolDefinition],
         cached_tool_prompt: &str,
     ) -> LLMRequest {
         let req = req_mutex.lock().await;
@@ -40,6 +43,7 @@ impl Agent {
         LLMRequest {
             system_prompt: final_system_prompt,
             history: filtered_history,
+            tools: tools.to_vec(),
             tool_prompt: cached_tool_prompt.to_string(),
             formatted_prompt,
         }
@@ -69,7 +73,7 @@ impl Agent {
             match &**msg {
                 Message::User { .. } => {
                     prompt.push_str(&tpl.user_prefix);
-                    msg.write_text_to(&mut prompt);
+                    prompt.push_str(&msg.to_string());
                     prompt.push_str(&tpl.user_suffix);
                 }
                 Message::Tool { content } => {

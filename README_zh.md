@@ -54,13 +54,13 @@ Ambi 诞生于对过度复杂的 Agent 框架的不满——那些框架强迫�
 
 ```toml
 [dependencies]
-ambi = "0.1.5"
+ambi = "0.1.7"
 ```
 
 仅使用云端 API（更快编译，无 llama.cpp 依赖）：
 
 ```toml
-ambi = { version = "0.1.5", default-features = false, features = ["openai-api"] }
+ambi = { version = "0.1.7", default-features = false, features = ["openai-api"] }
 ```
 
 ## 使用方法

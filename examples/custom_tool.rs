@@ -4,10 +4,10 @@ use serde::Deserialize;
 
 use ambi::agent::tool::ToolErr;
 use ambi::agent::{Tool, ToolDefinition};
-use ambi::llm::providers::openai_api::OpenAIEngineConfig;
 use ambi::llm::ChatTemplateType;
-use ambi::LLMEngineConfig;
-use ambi::{Agent, ChatPipeline};
+use ambi::types::config::OpenAIEngineConfig;
+use ambi::Agent;
+use ambi::{ChatRunner, LLMEngineConfig};
 
 // Step 1: Define the arguments structure for the tool.
 // These parameters will be populated by the LLM when it decides to call the tool.
@@ -74,10 +74,7 @@ async fn main() -> Result<()> {
         .tool(DatePumpTool)?;
 
     // Step 7: Ask a question that requires real-time data to trigger the tool automatically.
-    let res = agent
-        .chat("What is the current local date and time?")
-        .await
-        .map_err(|_| anyhow::anyhow!("Failed to create chat stream"))?;
+    let res = ChatRunner::chat(&mut agent, "What is the current local date and time?").await?;
 
     // Step 8: Print the final answer synthesized by the LLM after observing the tool's output.
     print!("{}", res);

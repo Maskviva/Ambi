@@ -1,6 +1,6 @@
 // Import required configuration structs and traits.
-use ambi::llm::providers::openai_api::OpenAIEngineConfig;
 use ambi::llm::ChatTemplateType;
+use ambi::types::config::OpenAIEngineConfig;
 use ambi::{Agent, LLMEngineConfig};
 use anyhow::Result;
 

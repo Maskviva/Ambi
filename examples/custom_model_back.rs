@@ -1,7 +1,8 @@
 // Import traits and types required for implementing a custom LLM backend.
-use ambi::llm::{LLMEngineTrait, LLMRequest};
+use ambi::error::Result;
+use ambi::llm::LLMEngineTrait;
+use ambi::types::LLMRequest;
 use ambi::Agent;
-use anyhow::Result;
 use async_trait::async_trait;
 
 // Step 1: Define the configuration and state structure for your custom engine.
@@ -25,7 +26,7 @@ impl LLMEngineTrait for MyCompanyEngine {
     async fn chat_stream(
         &mut self,
         _request: LLMRequest,
-        tx: tokio::sync::mpsc::Sender<Result<String, anyhow::Error>>,
+        tx: tokio::sync::mpsc::Sender<Result<String>>,
     ) {
         // Here, you would stream data from your backend and send chunks through `tx`.
         // Simulating a stream:

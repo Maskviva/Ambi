@@ -1,4 +1,6 @@
+// src/types/message.rs
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
@@ -31,21 +33,6 @@ impl Message {
         }
     }
 
-    pub fn write_text_to(&self, buf: &mut String) {
-        match self {
-            Message::System { content } => buf.push_str(content),
-            Message::User { content } => {
-                for part in content {
-                    if let ContentPart::Text { text: t } = part {
-                        buf.push_str(t);
-                    }
-                }
-            }
-            Message::Tool { content } => buf.push_str(content),
-            Message::Assistant { content } => buf.push_str(content),
-        }
-    }
-
     pub fn user_text(text: &str) -> Self {
         Self::User {
             content: vec![ContentPart::Text {
@@ -54,20 +41,27 @@ impl Message {
         }
     }
 
-    pub fn get_text_content(&self) -> String {
+    pub fn estimate_tokens(&self) -> usize {
+        self.to_string().len() / 4
+    }
+}
+
+impl fmt::Display for Message {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Message::System { content } => content.clone(),
+            Message::System { content } => write!(f, "{}", content),
             Message::User { content } => {
-                let mut text = String::new();
-                for part in content {
-                    if let ContentPart::Text { text: t } = part {
-                        text.push_str(t);
-                    }
-                }
-                text
+                let text: String = content
+                    .iter()
+                    .filter_map(|p| match p {
+                        ContentPart::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                write!(f, "{}", text)
             }
-            Message::Tool { content } => content.clone(),
-            Message::Assistant { content } => content.clone(),
+            Message::Tool { content } => write!(f, "{}", content),
+            Message::Assistant { content } => write!(f, "{}", content),
         }
     }
 }

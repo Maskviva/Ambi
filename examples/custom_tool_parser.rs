@@ -1,6 +1,6 @@
 // Import traits for parsing tool calls and formatting output streams.
 use ambi::agent::tool::{StreamFormatter, ToolCallParser};
-use ambi::llm::providers::openai_api::OpenAIEngineConfig;
+use ambi::types::config::OpenAIEngineConfig;
 use ambi::{Agent, LLMEngineConfig};
 use anyhow::Result;
 use serde_json::Value;

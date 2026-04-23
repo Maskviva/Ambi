@@ -1,10 +1,10 @@
 use anyhow::Result;
 
 // Import necessary configurations and traits for the local Llama engine.
-use ambi::llm::providers::llama_cpp::LlamaEngineConfig;
 use ambi::llm::ChatTemplateType;
-use ambi::LLMEngineConfig;
-use ambi::{Agent, ChatPipeline};
+use ambi::types::config::LlamaEngineConfig;
+use ambi::Agent;
+use ambi::{ChatRunner, LLMEngineConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,10 +41,7 @@ async fn main() -> Result<()> {
 
     // Step 4: Send a chat message to the local model.
     // The framework handles prompt construction, context management, and inference.
-    let res = agent
-        .chat("Who are you and what can you do?")
-        .await
-        .map_err(|_| anyhow::anyhow!("Failed to create chat stream"))?;
+    let res = ChatRunner::chat(&mut agent, "Who are you and what can you do?").await?;
 
     // Step 5: Output the result to the console.
     print!("{}", res);

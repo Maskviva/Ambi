@@ -1,10 +1,12 @@
+// src/agent/core/builder.rs
 use super::{Agent, CompletionRequest};
-use crate::agent::core::history::ChatHistory;
+use crate::agent::core::context::ChatHistory;
 use crate::agent::tool::{DefaultToolParser, Tool, ToolCallParser, ToolDefinition};
-use crate::llm::{ChatTemplate, ChatTemplateType, LLMEngine, LLMEngineConfig, LLMEngineTrait};
+use crate::error::{AmbiError, Result};
+use crate::llm::{ChatTemplate, LLMEngine, LLMEngineConfig, LLMEngineTrait};
 use crate::types::message::Message;
 
-use anyhow::{anyhow, Result};
+use crate::types::AgentConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
@@ -13,7 +15,9 @@ impl Agent {
     pub async fn make(engine_cfg: LLMEngineConfig) -> Result<Self> {
         let engine = tokio::task::spawn_blocking(move || LLMEngine::load(engine_cfg))
             .await
-            .map_err(|e| anyhow!("Failed to spawn blocking task: {}", e))??;
+            .map_err(|e| {
+                AmbiError::EngineError(format!("Failed to spawn blocking task: {}", e))
+            })??;
 
         Ok(Self::init_agent(engine))
     }
@@ -32,21 +36,17 @@ impl Agent {
         Self {
             llm_engine,
             completion_request,
-            system_prompt: String::new(),
-            template: ChatTemplateType::Chatml.as_template(),
+            config: AgentConfig::default(),
             tools_def: Arc::new(Vec::new()),
             tool_map: Arc::new(HashMap::new()),
             tool_parser: Arc::new(DefaultToolParser::make()),
             on_evict_handler: None,
-            max_iterations: 10,
-            enable_formatting: false,
-            eviction_strategy: (2, 6, 3000),
             cached_tool_prompt: String::new(),
         }
     }
 
     pub fn enable_formatting(mut self, enable: bool) -> Self {
-        self.enable_formatting = enable;
+        self.config.enable_formatting = enable;
         self
     }
 
@@ -56,17 +56,17 @@ impl Agent {
         keep_tail: usize,
         max_safe_tokens: usize,
     ) -> Self {
-        self.eviction_strategy = (keep_head, keep_tail, max_safe_tokens);
+        self.config.eviction_strategy = (keep_head, keep_tail, max_safe_tokens);
         self
     }
 
     pub fn preamble(mut self, system_prompt: &str) -> Self {
-        self.system_prompt = system_prompt.to_string();
+        self.config.system_prompt = system_prompt.to_string();
         self
     }
 
     pub fn template<T: Into<ChatTemplate>>(mut self, template_source: T) -> Self {
-        self.template = template_source.into();
+        self.config.template = template_source.into();
         self
     }
 
