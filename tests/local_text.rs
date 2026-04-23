@@ -1,4 +1,4 @@
-#[cfg(all(test))]
+#[cfg(all(test, feature = "llama-cpp"))]
 mod tests {
     use ambi::llm::providers::llama_cpp::LlamaEngineConfig;
     use ambi::{Agent, ChatPipeline, LLMEngineConfig};
