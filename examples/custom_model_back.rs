@@ -8,7 +8,7 @@ use async_trait::async_trait;
 // Step 1: Define the configuration and state structure for your custom engine.
 // This struct will hold API keys, client instances, or any proprietary state.
 struct MyCompanyEngine {
-    api_key: String,
+    _api_key: String,
 }
 
 // Step 2: Implement the `LLMEngineTrait` to integrate your engine into Ambi.
@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
 
     // Step 4: Instantiate your custom engine and box it as a dynamically dispatched trait object.
     let my_engine = Box::new(MyCompanyEngine {
-        api_key: "secret-api-key".to_string(),
+        _api_key: "secret-api-key".to_string(),
     });
 
     // Step 5: Mount your custom engine to the Agent using `Agent::with_custom_engine`.
