@@ -31,7 +31,6 @@ impl OpenAIEngine {
         })
     }
 
-    /// 同步生成
     pub async fn generate_response_sync(&self, request: LLMRequest) -> Result<String> {
         let api_request = self.get_request(self.cfg.model_name.clone(), request, false)?;
         let response = self
@@ -45,7 +44,6 @@ impl OpenAIEngine {
             AmbiError::EngineError("No choices returned by OpenAI API".to_string())
         })?;
 
-        // 原生 Tool Call 拦截并转标签
         if let Some(tool_calls) = choice.message.tool_calls {
             let v = serde_json::to_value(&tool_calls).unwrap_or_default();
             let mut simulated = String::new();
@@ -73,7 +71,6 @@ impl OpenAIEngine {
         Ok(choice.message.content.unwrap_or_default())
     }
 
-    /// 流式生成
     pub async fn generate_response_stream(
         &self,
         request: LLMRequest,
@@ -97,7 +94,6 @@ impl OpenAIEngine {
             match result {
                 Ok(response) => {
                     for choice in response.choices {
-                        // 动态 JSON 聚合流式工具块
                         if let Some(tool_calls) = choice.delta.tool_calls {
                             let v = serde_json::to_value(&tool_calls).unwrap_or_default();
                             if let Some(arr) = v.as_array() {

@@ -32,11 +32,11 @@ pub type EvictionHandler = Arc<dyn Fn(Vec<Arc<Message>>) + Send + Sync>;
 ///
 /// ```rust
 /// use ambi::{Agent, LLMEngineConfig};
-/// use ambi::llm::providers::openai_api::OpenAIEngineConfig;
+/// use ambi::types::config::OpenAIEngineConfig;
 /// use ambi::llm::ChatTemplateType;
 ///
 /// #[tokio::main]
-/// async fn main() -> Result<()> {
+/// async fn main() -> ambi::error::Result<()> {
 ///     let config = LLMEngineConfig::OpenAI(OpenAIEngineConfig {
 ///         api_key: "your-api-key".to_string(),
 ///         base_url: "[https://api.openai.com/v1](https://api.openai.com/v1)".to_string(),
