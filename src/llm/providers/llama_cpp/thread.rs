@@ -40,7 +40,6 @@ pub(crate) fn spawn_engine_thread(
 }
 
 fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaCommand>) {
-    // 1. Initialise backend, model, context, batch
     let backend = match LlamaBackend::init() {
         Ok(b) => b,
         Err(e) => {
@@ -84,7 +83,6 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
 
     info!("Llama engine thread started successfully.");
 
-    // 2. Command loop
     while let Some(cmd) = cmd_rx.blocking_recv() {
         match cmd {
             LlamaCommand::Chat { prompt, reply_tx } => {

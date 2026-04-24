@@ -3,11 +3,14 @@ use super::OpenAIEngine;
 use crate::error::{AmbiError, Result};
 use crate::types::message::Message;
 use crate::types::LLMRequest;
+use crate::ContentPart;
 use async_openai::types::chat::{
     ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
-    ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
+    ChatCompletionRequestMessageContentPartImageArgs,
+    ChatCompletionRequestMessageContentPartTextArgs, ChatCompletionRequestSystemMessageArgs,
+    ChatCompletionRequestUserMessageArgs, ChatCompletionRequestUserMessageContentPart,
     ChatCompletionTool, ChatCompletionTools, CreateChatCompletionRequest,
-    CreateChatCompletionRequestArgs, FunctionObjectArgs,
+    CreateChatCompletionRequestArgs, FunctionObjectArgs, ImageUrlArgs,
 };
 
 impl OpenAIEngine {
@@ -30,20 +33,50 @@ impl OpenAIEngine {
         }
 
         for msg in &request.history {
-            let text = msg.to_string();
             let api_msg: ChatCompletionRequestMessage = match &**msg {
-                Message::User { .. } => ChatCompletionRequestUserMessageArgs::default()
-                    .content(text)
-                    .build()
-                    .map_err(|e| AmbiError::EngineError(e.to_string()))?
-                    .into(),
+                Message::User { content } => {
+                    let mut parts = Vec::new();
+                    for part in content {
+                        match part {
+                            ContentPart::Text { text } => {
+                                parts.push(ChatCompletionRequestUserMessageContentPart::Text(
+                                    ChatCompletionRequestMessageContentPartTextArgs::default()
+                                        .text(text.clone())
+                                        .build()
+                                        .map_err(|e| AmbiError::EngineError(e.to_string()))?,
+                                ));
+                            }
+                            ContentPart::Image { url } => {
+                                parts.push(ChatCompletionRequestUserMessageContentPart::ImageUrl(
+                                    ChatCompletionRequestMessageContentPartImageArgs::default()
+                                        .image_url(
+                                            ImageUrlArgs::default()
+                                                .url(url.clone())
+                                                .build()
+                                                .map_err(|e| {
+                                                    AmbiError::EngineError(e.to_string())
+                                                })?,
+                                        )
+                                        .build()
+                                        .map_err(|e| AmbiError::EngineError(e.to_string()))?,
+                                ));
+                            }
+                        }
+                    }
+
+                    ChatCompletionRequestUserMessageArgs::default()
+                        .content(parts)
+                        .build()
+                        .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                        .into()
+                }
                 Message::Assistant { .. } => ChatCompletionRequestAssistantMessageArgs::default()
-                    .content(text)
+                    .content(msg.to_string())
                     .build()
                     .map_err(|e| AmbiError::EngineError(e.to_string()))?
                     .into(),
                 Message::Tool { .. } => ChatCompletionRequestUserMessageArgs::default()
-                    .content(format!("Tool result: {}", text))
+                    .content(format!("Tool result: {}", msg))
                     .build()
                     .map_err(|e| AmbiError::EngineError(e.to_string()))?
                     .into(),

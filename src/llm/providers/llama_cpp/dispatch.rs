@@ -48,7 +48,6 @@ impl LlamaEngine {
             return;
         }
 
-        // Wait until the engine thread signals completion.
         let _ = done_rx.await;
     }
 

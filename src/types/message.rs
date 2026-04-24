@@ -33,11 +33,16 @@ impl Message {
         }
     }
 
-    pub fn user_text(text: &str) -> Self {
+    pub fn user_multimodal(text: &str, image_url: &str) -> Self {
         Self::User {
-            content: vec![ContentPart::Text {
-                text: text.to_string(),
-            }],
+            content: vec![
+                ContentPart::Text {
+                    text: text.to_string(),
+                },
+                ContentPart::Image {
+                    url: image_url.to_string(),
+                },
+            ],
         }
     }
 

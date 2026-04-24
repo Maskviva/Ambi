@@ -29,10 +29,8 @@ impl LlamaEngine {
     /// Returns `AmbiError::EngineError` if the background thread could not be
     /// spawned (extremely unlikely) or if the configuration fails validation.
     pub fn load(cfg: LlamaEngineConfig) -> Result<Self> {
-        // Validate configuration early so the error is synchronous.
         cfg.validate()?;
 
-        // Install the C log callback before anything else.
         unsafe {
             llama_cpp_sys_2::llama_log_set(
                 Some(super::callback::llama_log_callback),

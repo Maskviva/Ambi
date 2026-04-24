@@ -26,7 +26,7 @@ pub(crate) unsafe extern "C" fn llama_log_callback(
         llama_cpp_sys_2::GGML_LOG_LEVEL_ERROR => error!("{}", clean),
         llama_cpp_sys_2::GGML_LOG_LEVEL_WARN => warn!("{}", clean),
         llama_cpp_sys_2::GGML_LOG_LEVEL_INFO => info!("{}", clean),
-        llama_cpp_sys_2::GGML_LOG_LEVEL_CONT => trace!("{}", log_str), // keep original for continuation
-        _ => {} // Silently ignore unknown log levels.
+        llama_cpp_sys_2::GGML_LOG_LEVEL_CONT => trace!("{}", log_str),
+        _ => {}
     }
 }

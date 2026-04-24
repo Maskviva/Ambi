@@ -22,7 +22,6 @@ impl InferenceSession {
         mut batch: &mut LlamaBatch,
         session: &mut InferenceSession,
     ) -> Result<f32> {
-        // 1. Tokenize
         let tokens = model
             .str_to_token(sentence, AddBos::Always)
             .map_err(|e| AmbiError::EngineError(format!("Tokenize failed: {}", e)))?
@@ -32,7 +31,6 @@ impl InferenceSession {
             return Ok(0.0);
         }
 
-        // 2. Build batch with consecutive positions.
         batch.clear();
         for (i, &t) in tokens.iter().enumerate() {
             batch
@@ -40,12 +38,10 @@ impl InferenceSession {
                 .map_err(|e| AmbiError::EngineError(format!("Batch add failed: {}", e)))?;
         }
 
-        // 3. Run forward pass to populate logits.
         context
             .decode(&mut batch)
             .map_err(|e| AmbiError::EngineError(format!("Decoding failed: {}", e)))?;
 
-        // 4. Accumulate entropy over all token positions.
         let mut total_entropy = 0.0_f32;
         for i in 0..tokens.len() {
             let logits = context.get_logits_ith(i as i32);

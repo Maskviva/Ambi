@@ -35,14 +35,12 @@ impl InferenceSession {
     where
         F: FnMut(String) -> bool,
     {
-        // ----- 1. Tokenize prompt --------------------------------------------------
         debug!("\n{}\n========================================", prompt);
         let tokens_list = model
             .str_to_token(prompt, AddBos::Always)
             .map_err(|e| AmbiError::EngineError(format!("Tokenize failed: {}", e)))?;
         let current_tokens: Vec<LlamaToken> = tokens_list.to_vec();
 
-        // ----- 2. Validate prompt size vs context window --------------------------
         if current_tokens.len() >= cfg.n_ctx as usize {
             return Err(AmbiError::EngineError(format!(
                 "Prompt size ({} tokens) exceeds or equals n_ctx limit ({})",
@@ -64,7 +62,6 @@ impl InferenceSession {
             )));
         }
 
-        // ----- 3. KV‑cache eviction optimisation ----------------------------------
         // Compare the new prompt with the previously cached history to avoid
         // re‑evaluating the common prefix.
         let mut match_len = 0;
@@ -106,13 +103,10 @@ impl InferenceSession {
                 context.clear_kv_cache();
                 match_len = 0;
             } else {
-                // Shift successful; history is now the common prefix.
                 session.history_tokens.truncate(match_len);
-                // match_len stays as the new effective length.
             }
         }
 
-        // ----- 4. Evaluate new tokens (the suffix that is not cached) -------------
         session.pos = match_len as i32;
         let new_tokens = &current_tokens[match_len..];
 
@@ -140,7 +134,6 @@ impl InferenceSession {
         // Now our history fully reflects the current prompt.
         session.history_tokens = current_tokens;
 
-        // ----- 5. Configure sampler chain -----------------------------------------
         let mut sampler = LlamaSampler::chain_simple([
             LlamaSampler::penalties(
                 cfg.penalty_last_n,
@@ -153,7 +146,6 @@ impl InferenceSession {
             LlamaSampler::dist(cfg.seed),
         ]);
 
-        // ----- 6. Generation loop -------------------------------------------------
         let mut decoded_count = 0;
 
         loop {

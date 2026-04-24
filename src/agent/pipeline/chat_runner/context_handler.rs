@@ -2,18 +2,19 @@
 use super::ChatRunner;
 use crate::agent::core::{CompletionRequest, EvictionHandler};
 use crate::types::message::Message;
+use crate::ContentPart;
 use tokio::sync::Mutex as TokioMutex;
 
 impl ChatRunner {
     pub(crate) async fn append_user_message(
         req_mutex: &TokioMutex<CompletionRequest>,
-        prompt: &str,
+        parts: Vec<ContentPart>,
     ) {
         req_mutex
             .lock()
             .await
             .chat_history
-            .push(Message::user_text(prompt));
+            .push(Message::User { content: parts });
     }
 
     pub(crate) async fn append_assistant_message_and_evict(
