@@ -90,9 +90,7 @@ impl ChatRunner {
 
             let task_logic = async move {
                 let accessor = StateManager(&state_clone);
-                if let Err(e) = accessor.push_user_message(parts) {
-                    return Err(e);
-                }
+                accessor.push_user_message(parts)?;
 
                 let ctx = RunCtx {
                     loop_config: LoopConfig {
