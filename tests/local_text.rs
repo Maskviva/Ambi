@@ -1,8 +1,9 @@
 #[cfg(all(test, feature = "llama-cpp"))]
 mod tests {
     use ambi::types::config::LlamaEngineConfig;
-    use ambi::{Agent, ChatRunner, LLMEngineConfig};
+    use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
     use std::io::Write;
+    use std::sync::{Arc, Mutex};
     use tokio_stream::StreamExt;
 
     #[tokio::test]
@@ -28,11 +29,16 @@ mod tests {
             min_keep: 1,
         };
 
-        let mut agent = Agent::make(LLMEngineConfig::Llama(cfg)).await.unwrap();
+        let chat_runner = ChatRunner;
 
-        let mut res_stream = ChatRunner::chat_stream(&mut agent, "who are you")
-            .await
-            .unwrap();
+        let agent = Agent::make(LLMEngineConfig::Llama(cfg)).await.unwrap();
+
+        let agent_state = Arc::new(Mutex::new(AgentState::new()));
+
+        let mut res_stream =
+            ChatRunner::chat_stream(&chat_runner, &agent, &agent_state, "who are you")
+                .await
+                .unwrap();
 
         let mut res_buffe = String::new();
 

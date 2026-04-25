@@ -151,13 +151,13 @@ impl OpenAIEngine {
 
 #[async_trait]
 impl LLMEngineTrait for OpenAIEngine {
-    async fn chat(&mut self, request: LLMRequest) -> Result<String> {
+    async fn chat(&self, request: LLMRequest) -> Result<String> {
         self.generate_response_sync(request).await
     }
-    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String>>) {
+    async fn chat_stream(&self, request: LLMRequest, tx: Sender<Result<String>>) {
         if let Err(e) = self.generate_response_stream(request, tx.clone()).await {
             let _ = tx.send(Err(e)).await;
         }
     }
-    fn reset_context(&mut self) {}
+    fn reset_context(&self) {}
 }

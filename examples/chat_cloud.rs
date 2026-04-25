@@ -1,10 +1,11 @@
 use anyhow::Result;
+use std::sync::{Arc, Mutex};
 
 // Import necessary configurations and traits from the Ambi framework.
 use ambi::llm::ChatTemplateType;
 use ambi::types::config::OpenAIEngineConfig;
-use ambi::LLMEngineConfig;
 use ambi::{Agent, ChatRunner};
+use ambi::{AgentState, LLMEngineConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -26,16 +27,28 @@ async fn main() -> Result<()> {
         top_p: 0.9, // Controls diversity via nucleus sampling.
     });
 
-    // Step 4: Instantiate the Agent using the builder pattern.
+    // Step 4: Instantiate the ChatRunner. This is used to distinguish which `ChatRunner` it comes from.
+    let chat_runner = ChatRunner;
+
+    // Step 5: Instantiate the Agent using the builder pattern.
     // We pass the engine configuration, set the chat template, and inject the system prompt.
-    let mut agent = Agent::make(engine_config)
+    let agent = Agent::make(engine_config)
         .await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt);
 
-    // Step 5: Initiate a synchronous chat request to the LLM.
+    // Step 6: Initialize the agent state. The state will be stored here.
+    let agent_state = Arc::new(Mutex::new(AgentState::new()));
+
+    // Step 7: Initiate a synchronous chat request to the LLM.
     // The agent will process the prompt, interact with the model, and return the final string.
-    let res = ChatRunner::chat(&mut agent, "Who are you and what can you do?").await?;
+    let res = ChatRunner::chat(
+        &chat_runner,
+        &agent,
+        &agent_state,
+        "Who are you and what can you do?",
+    )
+    .await?;
 
     // Step 6: Print the final response received from the model.
     print!("{}", res);

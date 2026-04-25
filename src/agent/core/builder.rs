@@ -1,6 +1,5 @@
 // src/agent/core/builder.rs
-use super::{Agent, CompletionRequest};
-use crate::agent::core::context::ChatHistory;
+use super::Agent;
 use crate::agent::tool::{DefaultToolParser, Tool, ToolCallParser, ToolDefinition};
 use crate::error::{AmbiError, Result};
 use crate::llm::{ChatTemplate, LLMEngine, LLMEngineConfig, LLMEngineTrait};
@@ -9,7 +8,6 @@ use crate::types::message::Message;
 use crate::types::AgentConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex as TokioMutex;
 
 impl Agent {
     pub async fn make(engine_cfg: LLMEngineConfig) -> Result<Self> {
@@ -28,14 +26,10 @@ impl Agent {
     }
 
     pub(super) fn init_agent(engine: LLMEngine) -> Self {
-        let llm_engine = Arc::new(TokioMutex::new(engine));
-        let completion_request = Arc::new(TokioMutex::new(CompletionRequest {
-            chat_history: ChatHistory::new(),
-        }));
+        let llm_engine = Arc::new(engine);
 
         Self {
             llm_engine,
-            completion_request,
             config: AgentConfig::default(),
             tools_def: Arc::new(Vec::new()),
             tool_map: Arc::new(HashMap::new()),

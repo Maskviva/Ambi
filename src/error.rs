@@ -21,9 +21,6 @@ pub enum AmbiError {
     #[error("Maximum iterations ({0}) reached without a final answer")]
     MaxIterationsReached(usize),
 
-    #[error("Agent is currently busy processing another request")]
-    AgentBusy,
-
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

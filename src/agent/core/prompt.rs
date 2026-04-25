@@ -1,25 +1,22 @@
-use super::{Agent, CompletionRequest};
+use super::{Agent, AgentState};
 use crate::agent::ToolDefinition;
 use crate::llm::ChatTemplate;
 use crate::types::message::Message;
 use crate::types::LLMRequest;
 use std::sync::Arc;
-use tokio::sync::Mutex as TokioMutex;
 
 impl Agent {
-    pub(crate) async fn get_llm_request(
-        req_mutex: &TokioMutex<CompletionRequest>,
+    pub(crate) fn get_llm_request(
+        state: &AgentState,
         system_prompt: &str,
         tpl: &ChatTemplate,
         tools: &[ToolDefinition],
         cached_tool_prompt: &str,
     ) -> LLMRequest {
-        let req = req_mutex.lock().await;
-
         let mut final_system_prompt = system_prompt.to_string();
         let mut filtered_history = Vec::new();
 
-        for msg in req.chat_history.all() {
+        for msg in state.chat_history.all() {
             match &**msg {
                 Message::System { content } => {
                     if !final_system_prompt.is_empty() {

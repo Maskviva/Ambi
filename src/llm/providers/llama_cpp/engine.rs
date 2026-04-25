@@ -60,19 +60,19 @@ impl Drop for LlamaEngine {
 
 #[async_trait]
 impl LLMEngineTrait for LlamaEngine {
-    async fn chat(&mut self, request: LLMRequest) -> Result<String> {
+    async fn chat(&self, request: LLMRequest) -> Result<String> {
         self.chat_internal(&request.formatted_prompt).await
     }
 
-    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String>>) {
+    async fn chat_stream(&self, request: LLMRequest, tx: Sender<Result<String>>) {
         self.stream_internal(&request.formatted_prompt, tx).await;
     }
 
-    fn reset_context(&mut self) {
+    fn reset_context(&self) {
         self.reset_internal();
     }
 
-    async fn evaluate_sentence_entropy(&mut self, sentence: &str) -> Result<f32> {
+    async fn evaluate_sentence_entropy(&self, sentence: &str) -> Result<f32> {
         self.evaluate_sentence_entropy_internal(sentence).await
     }
 }

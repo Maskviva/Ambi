@@ -15,7 +15,7 @@ pub mod error;
 pub mod llm;
 pub mod types;
 
-pub use agent::core::Agent;
+pub use agent::core::{Agent, AgentState};
 pub use agent::pipeline::chat_runner::ChatRunner;
 pub use llm::{LLMEngine, LLMEngineConfig};
 pub use types::message::{ContentPart, Message};

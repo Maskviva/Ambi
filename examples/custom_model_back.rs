@@ -16,7 +16,7 @@ struct MyCompanyEngine {
 #[async_trait]
 impl LLMEngineTrait for MyCompanyEngine {
     // Implement the synchronous/non-streaming chat method.
-    async fn chat(&mut self, _request: LLMRequest) -> Result<String> {
+    async fn chat(&self, _request: LLMRequest) -> Result<String> {
         // Here, you would typically make an HTTP request using `request.formatted_prompt`.
         // For demonstration, we simply return a hardcoded string.
         Ok("I am a custom AI assistant.".to_string())
@@ -24,7 +24,7 @@ impl LLMEngineTrait for MyCompanyEngine {
 
     // Implement the asynchronous/streaming chat method.
     async fn chat_stream(
-        &mut self,
+        &self,
         _request: LLMRequest,
         tx: tokio::sync::mpsc::Sender<Result<String>>,
     ) {
@@ -35,7 +35,7 @@ impl LLMEngineTrait for MyCompanyEngine {
     }
 
     // Implement the method to clear internal session contexts or KV caches if applicable.
-    fn reset_context(&mut self) {
+    fn reset_context(&self) {
         // Clear any internal states here.
     }
 }

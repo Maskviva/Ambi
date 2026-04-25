@@ -1,12 +1,13 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
+use std::sync::{Arc, Mutex};
 
 use ambi::agent::tool::ToolErr;
 use ambi::agent::{Tool, ToolDefinition};
 use ambi::llm::ChatTemplateType;
 use ambi::types::config::OpenAIEngineConfig;
-use ambi::Agent;
+use ambi::{Agent, AgentState};
 use ambi::{ChatRunner, LLMEngineConfig};
 
 // Step 1: Define the arguments structure for the tool.
@@ -66,17 +67,29 @@ async fn main() -> Result<()> {
         top_p: 0.9,
     });
 
-    // Step 6: Create the Agent and mount the custom tool using `.tool()`.
-    let mut agent = Agent::make(engine_config)
+    // Step 6: Instantiate the ChatRunner. This is used to distinguish which `ChatRunner` it comes from.
+    let chat_runner = ChatRunner;
+
+    // Step 7: Create the Agent and mount the custom tool using `.tool()`.
+    let agent = Agent::make(engine_config)
         .await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt)
         .tool(DatePumpTool)?;
 
-    // Step 7: Ask a question that requires real-time data to trigger the tool automatically.
-    let res = ChatRunner::chat(&mut agent, "What is the current local date and time?").await?;
+    // Step 8: Initialize the agent state. The state will be stored here.
+    let agent_state = Arc::new(Mutex::new(AgentState::new()));
 
-    // Step 8: Print the final answer synthesized by the LLM after observing the tool's output.
+    // Step 9: Ask a question that requires real-time data to trigger the tool automatically.
+    let res = ChatRunner::chat(
+        &chat_runner,
+        &agent,
+        &agent_state,
+        "What is the current local date and time?",
+    )
+    .await?;
+
+    // Step 10: Print the final answer synthesized by the LLM after observing the tool's output.
     print!("{}", res);
 
     Ok(())

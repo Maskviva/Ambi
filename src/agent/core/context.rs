@@ -5,16 +5,19 @@ use std::sync::Arc;
 #[derive(Serialize, Deserialize, Default)]
 pub struct ChatHistory {
     messages: Vec<Arc<Message>>,
+    cached_text_len: usize,
 }
 
 impl ChatHistory {
     pub fn new() -> Self {
         Self {
             messages: Vec::new(),
+            cached_text_len: 0,
         }
     }
 
     pub fn push(&mut self, msg: Message) {
+        self.cached_text_len += msg.text_len();
         self.messages.push(Arc::new(msg));
     }
 
@@ -24,6 +27,7 @@ impl ChatHistory {
 
     pub fn clear(&mut self) {
         self.messages.clear();
+        self.cached_text_len = 0;
     }
 
     pub fn len(&self) -> usize {
@@ -35,11 +39,18 @@ impl ChatHistory {
     }
 
     pub fn truncate(&mut self, len: usize) {
-        self.messages.truncate(len);
+        if len < self.messages.len() {
+            self.messages.truncate(len);
+            self.recalculate_len();
+        }
     }
 
     pub fn estimate_tokens(&self) -> usize {
-        self.messages.iter().map(|m| m.text_len()).sum::<usize>() / 4
+        self.cached_text_len / 4
+    }
+
+    fn recalculate_len(&mut self) {
+        self.cached_text_len = self.messages.iter().map(|m| m.text_len()).sum();
     }
 
     pub fn evict_old_messages(
@@ -60,16 +71,16 @@ impl ChatHistory {
 
         let mut safe_cut_idx = total.saturating_sub(recent_keep).max(initial_keep);
 
-        while safe_cut_idx < total {
-            let remaining_tokens: usize = self.messages[safe_cut_idx..]
-                .iter()
-                .map(|m| m.text_len())
-                .sum::<usize>()
-                / 4;
+        let mut remaining_len: usize = self.messages[safe_cut_idx..]
+            .iter()
+            .map(|m| m.text_len())
+            .sum();
 
-            if (remaining_tokens + prompt_overhead) <= max_safe_tokens {
+        while safe_cut_idx < total {
+            if (remaining_len / 4 + prompt_overhead) <= max_safe_tokens {
                 break;
             }
+            remaining_len = remaining_len.saturating_sub(self.messages[safe_cut_idx].text_len());
             safe_cut_idx += 1;
         }
 
@@ -101,6 +112,8 @@ impl ChatHistory {
                 }),
             );
         }
+
+        self.recalculate_len();
 
         evicted
     }

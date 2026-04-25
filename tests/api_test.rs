@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod tests {
     use ambi::types::config::OpenAIEngineConfig;
-    use ambi::{Agent, ChatRunner, LLMEngineConfig};
+    use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
+    use std::sync::{Arc, Mutex};
 
     #[tokio::test]
     async fn test_ollama_local_api() {
@@ -18,9 +19,12 @@ mod tests {
             top_p: 0.9,
         };
 
-        let mut agent = Agent::make(LLMEngineConfig::OpenAI(cfg)).await.unwrap();
+        let agent = Agent::make(LLMEngineConfig::OpenAI(cfg)).await.unwrap();
+        let agent_state = Arc::new(Mutex::new(AgentState::new()));
 
-        let res = ChatRunner::chat(&mut agent, "who are you").await.unwrap();
+        let res = ChatRunner::chat(&ChatRunner, &agent, &agent_state, "who are you")
+            .await
+            .unwrap();
 
         println!("{}", res);
     }

@@ -14,11 +14,11 @@ use crate::types::LLMRequest;
 
 #[async_trait]
 pub trait LLMEngineTrait: Send + Sync {
-    async fn chat(&mut self, request: LLMRequest) -> Result<String>;
-    async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String>>);
-    fn reset_context(&mut self);
+    async fn chat(&self, request: LLMRequest) -> Result<String>;
+    async fn chat_stream(&self, request: LLMRequest, tx: Sender<Result<String>>);
+    fn reset_context(&self);
 
-    async fn evaluate_sentence_entropy(&mut self, _sentence: &str) -> Result<f32> {
+    async fn evaluate_sentence_entropy(&self, _sentence: &str) -> Result<f32> {
         Err(AmbiError::EngineError(
             "The current engine backend does not support entropy evaluation. Local Llama-cpp engine is required.".to_string()
         ))
@@ -61,19 +61,16 @@ impl LLMEngine {
         Self { backend }
     }
 
-    pub async fn chat(&mut self, request: LLMRequest) -> Result<String> {
+    pub async fn chat(&self, request: LLMRequest) -> Result<String> {
         self.backend.chat(request).await
     }
-
-    pub async fn chat_stream(&mut self, request: LLMRequest, tx: Sender<Result<String>>) {
+    pub async fn chat_stream(&self, request: LLMRequest, tx: Sender<Result<String>>) {
         self.backend.chat_stream(request, tx).await
     }
-
-    pub fn reset_context(&mut self) {
+    pub fn reset_context(&self) {
         self.backend.reset_context();
     }
-
-    pub async fn evaluate_sentence_entropy(&mut self, sentence: &str) -> Result<f32> {
+    pub async fn evaluate_sentence_entropy(&self, sentence: &str) -> Result<f32> {
         self.backend.evaluate_sentence_entropy(sentence).await
     }
 }

@@ -1,9 +1,10 @@
 use anyhow::Result;
+use std::sync::{Arc, Mutex};
 
 // Import necessary configurations and traits for the local Llama engine.
 use ambi::llm::ChatTemplateType;
 use ambi::types::config::LlamaEngineConfig;
-use ambi::Agent;
+use ambi::{Agent, AgentState};
 use ambi::{ChatRunner, LLMEngineConfig};
 
 #[tokio::main]
@@ -32,18 +33,30 @@ async fn main() -> Result<()> {
         min_keep: 1,      // Minimum number of tokens to keep during sampling.
     });
 
-    // Step 3: Instantiate the Agent.
+    // Step 3: Instantiate the ChatRunner. This is used to distinguish which `ChatRunner` it comes from.
+    let chat_runner = ChatRunner;
+
+    // Step 4: Instantiate the Agent.
     // Mount the local engine, apply the ChatML template, and set the system prompt.
-    let mut agent = Agent::make(engine_config)
+    let agent = Agent::make(engine_config)
         .await?
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt);
 
-    // Step 4: Send a chat message to the local model.
-    // The framework handles prompt construction, context management, and inference.
-    let res = ChatRunner::chat(&mut agent, "Who are you and what can you do?").await?;
+    // Step 5: Initialize the agent state. The state will be stored here.
+    let agent_state = Arc::new(Mutex::new(AgentState::new()));
 
-    // Step 5: Output the result to the console.
+    // Step 6: Send a chat message to the local model.
+    // The framework handles prompt construction, context management, and inference.
+    let res = ChatRunner::chat(
+        &chat_runner,
+        &agent,
+        &agent_state,
+        "Who are you and what can you do?",
+    )
+    .await?;
+
+    // Step 7: Output the result to the console.
     print!("{}", res);
 
     Ok(())
