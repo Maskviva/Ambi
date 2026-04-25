@@ -64,11 +64,15 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
             }
         };
 
+    let n_threads = thread::available_parallelism()
+        .map(|n| n.get() as i32)
+        .unwrap_or(1);
+
     let mut ctx_params = LlamaContextParams::default();
     ctx_params = ctx_params.with_n_ctx(Option::from(
         NonZeroU32::new(cfg.n_ctx).expect("n_ctx must be > 0"),
     ));
-    ctx_params = ctx_params.with_n_threads(num_cpus::get() as i32);
+    ctx_params = ctx_params.with_n_threads(n_threads);
 
     let mut context = match model.new_context(&backend, ctx_params) {
         Ok(c) => c,
