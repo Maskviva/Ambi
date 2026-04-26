@@ -1,16 +1,17 @@
 // src/llm/providers/openai/translator.rs
+
 use super::OpenAIEngine;
 use crate::error::{AmbiError, Result};
 use crate::types::message::Message;
 use crate::types::LLMRequest;
 use crate::ContentPart;
 use async_openai::types::chat::{
-    ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
-    ChatCompletionRequestMessageContentPartImageArgs,
+    ChatCompletionMessageToolCalls, ChatCompletionRequestAssistantMessageArgs,
+    ChatCompletionRequestMessage, ChatCompletionRequestMessageContentPartImageArgs,
     ChatCompletionRequestMessageContentPartTextArgs, ChatCompletionRequestSystemMessageArgs,
-    ChatCompletionRequestUserMessageArgs, ChatCompletionRequestUserMessageContentPart,
-    ChatCompletionTool, ChatCompletionTools, CreateChatCompletionRequest,
-    CreateChatCompletionRequestArgs, FunctionObjectArgs, ImageUrlArgs,
+    ChatCompletionRequestToolMessageArgs, ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
+    ChatCompletionTools, CreateChatCompletionRequest, CreateChatCompletionRequestArgs,
+    FunctionObjectArgs, ImageUrlArgs,
 };
 
 impl OpenAIEngine {
@@ -39,15 +40,16 @@ impl OpenAIEngine {
                     for part in content {
                         match part {
                             ContentPart::Text { text } => {
-                                parts.push(ChatCompletionRequestUserMessageContentPart::Text(
+                                parts.push(
                                     ChatCompletionRequestMessageContentPartTextArgs::default()
                                         .text(text.clone())
                                         .build()
-                                        .map_err(|e| AmbiError::EngineError(e.to_string()))?,
-                                ));
+                                        .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                                        .into(),
+                                );
                             }
                             ContentPart::Image { url } => {
-                                parts.push(ChatCompletionRequestUserMessageContentPart::ImageUrl(
+                                parts.push(
                                     ChatCompletionRequestMessageContentPartImageArgs::default()
                                         .image_url(
                                             ImageUrlArgs::default()
@@ -58,8 +60,9 @@ impl OpenAIEngine {
                                                 })?,
                                         )
                                         .build()
-                                        .map_err(|e| AmbiError::EngineError(e.to_string()))?,
-                                ));
+                                        .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                                        .into(),
+                                );
                             }
                         }
                     }
@@ -70,16 +73,46 @@ impl OpenAIEngine {
                         .map_err(|e| AmbiError::EngineError(e.to_string()))?
                         .into()
                 }
-                Message::Assistant { .. } => ChatCompletionRequestAssistantMessageArgs::default()
-                    .content(msg.to_string())
-                    .build()
-                    .map_err(|e| AmbiError::EngineError(e.to_string()))?
-                    .into(),
-                Message::Tool { .. } => ChatCompletionRequestUserMessageArgs::default()
-                    .content(format!("Tool result: {}", msg))
-                    .build()
-                    .map_err(|e| AmbiError::EngineError(e.to_string()))?
-                    .into(),
+                Message::Assistant {
+                    content,
+                    tool_calls,
+                } => {
+                    let mut args = ChatCompletionRequestAssistantMessageArgs::default();
+                    if !content.is_empty() {
+                        args.content(content.clone());
+                    }
+                    if !tool_calls.is_empty() {
+                        let api_tool_calls: Vec<ChatCompletionMessageToolCalls> = tool_calls
+                            .iter()
+                            .map(|(name, arg, id)| {
+                                serde_json::from_value(serde_json::json!({
+                                    "id": id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": name,
+                                        "arguments": arg.to_string()
+                                    }
+                                }))
+                                .expect("Failed to deserialize tool call safely")
+                            })
+                            .collect();
+                        args.tool_calls(api_tool_calls);
+                    }
+                    args.build()
+                        .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                        .into()
+                }
+                Message::Tool { content, tool_id } => {
+                    let id = tool_id
+                        .clone()
+                        .unwrap_or_else(|| "call_default".to_string());
+                    ChatCompletionRequestToolMessageArgs::default()
+                        .tool_call_id(id)
+                        .content(content.clone())
+                        .build()
+                        .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                        .into()
+                }
                 Message::System { .. } => continue,
             };
             messages.push(api_msg);

@@ -10,4 +10,5 @@ pub struct LLMRequest {
     pub tools: Vec<ToolDefinition>,
     pub tool_prompt: String,
     pub formatted_prompt: String,
+    pub tool_tags: (String, String),
 }

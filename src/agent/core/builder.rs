@@ -66,8 +66,9 @@ impl Agent {
 
     pub fn tool<T: Tool + 'static>(mut self, tool: T) -> Result<Self> {
         let def = tool.definition();
-        let mut defs = Arc::try_unwrap(self.tools_def).unwrap_or_else(|arc| (*arc).clone());
-        let mut map = Arc::try_unwrap(self.tool_map).unwrap_or_else(|arc| (*arc).clone());
+
+        let defs = Arc::make_mut(&mut self.tools_def);
+        let map = Arc::make_mut(&mut self.tool_map);
 
         if !defs.iter().any(|t| t.name == def.name) {
             defs.push(ToolDefinition {
@@ -80,9 +81,6 @@ impl Agent {
             });
             map.insert(def.name, Arc::new(tool));
         }
-
-        self.tools_def = Arc::new(defs);
-        self.tool_map = Arc::new(map);
 
         self.update_cached_tool_prompt();
         Ok(self)

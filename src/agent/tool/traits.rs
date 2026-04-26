@@ -78,6 +78,7 @@ pub trait StreamFormatter: Send + Sync {
 }
 
 pub trait ToolCallParser: Send + Sync {
+    fn get_tags(&self) -> (String, String);
     fn format_instruction(&self, tools_json: &str) -> String;
     fn parse(&self, text: &str) -> Vec<(String, Value)>;
 

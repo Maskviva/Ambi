@@ -1,14 +1,14 @@
-use anyhow::Result;
-use async_trait::async_trait;
-use serde::Deserialize;
-use std::sync::{Arc, Mutex};
-
 use ambi::agent::tool::ToolErr;
 use ambi::agent::{Tool, ToolDefinition};
 use ambi::llm::ChatTemplateType;
 use ambi::types::config::OpenAIEngineConfig;
 use ambi::{Agent, AgentState};
 use ambi::{ChatRunner, LLMEngineConfig};
+use anyhow::Result;
+use async_trait::async_trait;
+use serde::Deserialize;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 // Step 1: Define the arguments structure for the tool.
 // These parameters will be populated by the LLM when it decides to call the tool.
@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
         .tool(DatePumpTool)?;
 
     // Step 8: Initialize the agent state. The state will be stored here.
-    let agent_state = Arc::new(Mutex::new(AgentState::new()));
+    let agent_state = Arc::new(RwLock::new(AgentState::new()));
 
     // Step 9: Ask a question that requires real-time data to trigger the tool automatically.
     let res = ChatRunner::chat(

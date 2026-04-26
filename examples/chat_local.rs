@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::sync::{Arc, Mutex};
-
+use std::sync::Arc;
+use tokio::sync::RwLock;
 // Import necessary configurations and traits for the local Llama engine.
 use ambi::llm::ChatTemplateType;
 use ambi::types::config::LlamaEngineConfig;
@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
         .preamble(system_prompt);
 
     // Step 5: Initialize the agent state. The state will be stored here.
-    let agent_state = Arc::new(Mutex::new(AgentState::new()));
+    let agent_state = Arc::new(RwLock::new(AgentState::new()));
 
     // Step 6: Send a chat message to the local model.
     // The framework handles prompt construction, context management, and inference.

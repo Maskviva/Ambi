@@ -3,7 +3,8 @@ mod tests {
     use ambi::types::config::LlamaEngineConfig;
     use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
     use std::io::Write;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
     use tokio_stream::StreamExt;
 
     #[tokio::test]
@@ -33,7 +34,7 @@ mod tests {
 
         let agent = Agent::make(LLMEngineConfig::Llama(cfg)).await.unwrap();
 
-        let agent_state = Arc::new(Mutex::new(AgentState::new()));
+        let agent_state = Arc::new(RwLock::new(AgentState::new()));
 
         let mut res_stream =
             ChatRunner::chat_stream(&chat_runner, &agent, &agent_state, "who are you")

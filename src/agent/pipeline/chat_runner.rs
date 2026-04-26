@@ -10,10 +10,11 @@ use crate::agent::pipeline::Pipeline;
 use crate::error::Result;
 use crate::ContentPart;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 
-pub(crate) struct StateManager<'a>(&'a Arc<StdMutex<AgentState>>);
+pub(crate) struct StateManager<'a>(&'a Arc<RwLock<AgentState>>);
 
 pub struct ChatRunner;
 
@@ -21,7 +22,7 @@ impl Pipeline for ChatRunner {
     async fn execute(
         &self,
         agent: &Agent,
-        state: &Arc<StdMutex<AgentState>>,
+        state: &Arc<RwLock<AgentState>>,
         input: Vec<ContentPart>,
     ) -> Result<String> {
         Self::chat_multimodal(agent, state, input).await
@@ -30,7 +31,7 @@ impl Pipeline for ChatRunner {
     async fn execute_stream(
         &self,
         agent: &Agent,
-        state: &Arc<StdMutex<AgentState>>,
+        state: &Arc<RwLock<AgentState>>,
         input: Vec<ContentPart>,
     ) -> Result<Pin<Box<ReceiverStream<Result<String>>>>> {
         Self::chat_multimodal_stream(agent, state, input).await
@@ -41,7 +42,7 @@ impl ChatRunner {
     pub async fn chat(
         &self,
         agent: &Agent,
-        state: &Arc<StdMutex<AgentState>>,
+        state: &Arc<RwLock<AgentState>>,
         prompt: &str,
     ) -> Result<String> {
         self.execute(
@@ -57,7 +58,7 @@ impl ChatRunner {
     pub async fn chat_stream(
         &self,
         agent: &Agent,
-        state: &Arc<StdMutex<AgentState>>,
+        state: &Arc<RwLock<AgentState>>,
         prompt: &str,
     ) -> Result<Pin<Box<ReceiverStream<Result<String>>>>> {
         self.execute_stream(

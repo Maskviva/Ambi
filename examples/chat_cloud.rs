@@ -1,6 +1,6 @@
 use anyhow::Result;
-use std::sync::{Arc, Mutex};
-
+use std::sync::Arc;
+use tokio::sync::RwLock;
 // Import necessary configurations and traits from the Ambi framework.
 use ambi::llm::ChatTemplateType;
 use ambi::types::config::OpenAIEngineConfig;
@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
         .preamble(system_prompt);
 
     // Step 6: Initialize the agent state. The state will be stored here.
-    let agent_state = Arc::new(Mutex::new(AgentState::new()));
+    let agent_state = Arc::new(RwLock::new(AgentState::new()));
 
     // Step 7: Initiate a synchronous chat request to the LLM.
     // The agent will process the prompt, interact with the model, and return the final string.

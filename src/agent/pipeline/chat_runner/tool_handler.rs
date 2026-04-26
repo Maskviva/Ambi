@@ -1,8 +1,9 @@
 // src/agent/pipeline/chat_runner/tool_handler.rs
 
 use super::{ChatRunner, StateManager};
-use crate::agent::tool::{DynTool, ToolCallParser, ToolManager};
+use crate::agent::tool::{DynTool, ToolManager};
 use crate::error::{AmbiError, Result};
+use crate::types::message::Message;
 use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -24,16 +25,15 @@ impl ChatRunner {
 
     pub(crate) async fn handle_tool_calls(
         state_accessor: &StateManager<'_>,
+        engine: &crate::llm::LLMEngine,
         tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
-        parser: &Arc<dyn ToolCallParser>,
-        assistant_response: &str,
+        calls: Vec<(String, serde_json::Value, String)>,
         tx_out: Option<Sender<Result<String>>>,
     ) -> Result<Vec<(String, String, String)>> {
-        let calls = parser.parse(assistant_response);
         let mut results = Vec::new();
 
         let mut stream = stream::iter(calls)
-            .map(move |(name, args)| {
+            .map(move |(name, args, id)| {
                 let t_map = Arc::clone(&tool_map);
                 let tx_clone = tx_out.clone();
                 async move {
@@ -46,7 +46,7 @@ impl ChatRunner {
                             "raw_input": raw,
                             "suggestion": "Please ensure your output strictly follows valid JSON syntax without trailing commas or unescaped quotes."
                         });
-                        return (name, args.to_string(), err_json.to_string());
+                        return (name, args.to_string(), err_json.to_string(), id);
                     }
 
                     let run_future = ToolManager::run_tool(&t_map, name.clone(), &args);
@@ -60,7 +60,7 @@ impl ChatRunner {
                                     "message": e.to_string()
                                 }).to_string()
                             });
-                            (name, args.to_string(), msg)
+                            (name, args.to_string(), msg, id)
                         }
                         _ = async {
                             if let Some(tx) = tx_clone {
@@ -70,21 +70,29 @@ impl ChatRunner {
                             }
                         } => {
                             log::error!("Client disconnected. Aborting ghost tool execution: {}", name);
-                            (name, args.to_string(), "CRITICAL ERROR: Client disconnected".to_string())
+                            (name, args.to_string(), "CRITICAL ERROR: Client disconnected".to_string(), id)
                         }
                     }
                 }
             })
             .buffered(5);
 
-        while let Some((name, args_str, msg)) = stream.next().await {
+        while let Some((name, args_str, msg, id)) = stream.next().await {
             if msg.contains("CRITICAL ERROR: Client disconnected") {
                 return Err(AmbiError::AgentError(
                     "Client disconnected during tool execution".to_string(),
                 ));
             }
 
-            state_accessor.push_tool_message(msg.clone())?;
+            let tool_msg = Message::Tool {
+                content: msg.clone(),
+                tool_id: Some(id.clone()),
+            };
+            let tokens = engine.count_tokens(&tool_msg.to_string());
+
+            state_accessor
+                .push_tool_message(msg.clone(), Some(id), tokens)
+                .await?;
             results.push((name, args_str, msg));
         }
 

@@ -10,6 +10,11 @@ pub struct XmlToolParser;
 
 // Step 2: Implement the `ToolCallParser` trait.
 impl ToolCallParser for XmlToolParser {
+    fn get_tags(&self) -> (String, String) {
+        // Return the opening and closing tags for the XML format.
+        unimplemented!()
+    }
+
     // Define how to instruct the LLM to format its tool calls.
     // This dynamically generates the tool instructions appended to the system prompt.
     fn format_instruction(&self, tools_json: &str) -> String {

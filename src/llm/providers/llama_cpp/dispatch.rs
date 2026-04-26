@@ -76,4 +76,22 @@ impl LlamaEngine {
             AmbiError::EngineError("Reply channel closed before response".to_string())
         })?
     }
+
+    /// Exactly compute token count using the native model.
+    pub(crate) async fn count_tokens_internal(&self, text: &str) -> Result<usize> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+
+        self.cmd_tx
+            .send(LlamaCommand::CountTokens {
+                text: text.to_owned(),
+                reply_tx,
+            })
+            .map_err(|_| {
+                AmbiError::EngineError("Llama engine thread terminated unexpectedly".to_string())
+            })?;
+
+        reply_rx.await.map_err(|_| {
+            AmbiError::EngineError("Reply channel closed before response".to_string())
+        })?
+    }
 }

@@ -33,6 +33,11 @@ pub(crate) enum LlamaCommand {
         sentence: String,
         reply_tx: oneshot::Sender<crate::error::Result<f32>>,
     },
+    /// Use the model's native tokenizer to exactly count tokens
+    CountTokens {
+        text: String,
+        reply_tx: oneshot::Sender<crate::error::Result<usize>>,
+    },
     /// Politely ask the background thread to stop processing, join, and
     /// release all resources.
     Shutdown,

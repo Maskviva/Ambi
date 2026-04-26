@@ -1,3 +1,5 @@
+// src/agent/core/prompt.rs
+
 use super::{Agent, AgentState};
 use crate::agent::ToolDefinition;
 use crate::llm::ChatTemplate;
@@ -12,11 +14,12 @@ impl Agent {
         tpl: &ChatTemplate,
         tools: &[ToolDefinition],
         cached_tool_prompt: &str,
+        tool_tags: (String, String),
     ) -> LLMRequest {
         let mut final_system_prompt = system_prompt.to_string();
         let mut filtered_history = Vec::new();
 
-        for msg in state.chat_history.all() {
+        for (msg, _exact_tokens) in state.chat_history.all() {
             match &**msg {
                 Message::System { content } => {
                     if !final_system_prompt.is_empty() {
@@ -43,6 +46,7 @@ impl Agent {
             tools: tools.to_vec(),
             tool_prompt: cached_tool_prompt.to_string(),
             formatted_prompt,
+            tool_tags,
         }
     }
 
@@ -73,12 +77,12 @@ impl Agent {
                     prompt.push_str(&msg.to_string());
                     prompt.push_str(&tpl.user_suffix);
                 }
-                Message::Tool { content } => {
+                Message::Tool { content, .. } => {
                     prompt.push_str(&tpl.tool_prefix);
                     prompt.push_str(content);
                     prompt.push_str(&tpl.tool_suffix);
                 }
-                Message::Assistant { content } => {
+                Message::Assistant { content, .. } => {
                     prompt.push_str(&tpl.assistant_prefix);
                     prompt.push_str(content);
                     prompt.push_str(&tpl.assistant_suffix);

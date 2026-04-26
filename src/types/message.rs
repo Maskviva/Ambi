@@ -12,10 +12,22 @@ pub enum ContentPart {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Message {
-    System { content: String },
-    User { content: Vec<ContentPart> },
-    Tool { content: String },
-    Assistant { content: String },
+    System {
+        content: String,
+    },
+    User {
+        content: Vec<ContentPart>,
+    },
+    Tool {
+        content: String,
+        tool_id: Option<String>,
+    },
+    Assistant {
+        content: String,
+
+        // (name, args, tool_call_id)
+        tool_calls: Vec<(String, serde_json::Value, String)>,
+    },
 }
 
 impl Message {
@@ -29,8 +41,8 @@ impl Message {
                     _ => 0,
                 })
                 .sum(),
-            Message::Tool { content } => content.len(),
-            Message::Assistant { content } => content.len(),
+            Message::Tool { content, .. } => content.len(),
+            Message::Assistant { content, .. } => content.len(),
         }
     }
 
@@ -66,8 +78,8 @@ impl fmt::Display for Message {
                     .collect();
                 write!(f, "{}", text)
             }
-            Message::Tool { content } => write!(f, "{}", content),
-            Message::Assistant { content } => write!(f, "{}", content),
+            Message::Tool { content, .. } => write!(f, "{}", content),
+            Message::Assistant { content, .. } => write!(f, "{}", content),
         }
     }
 }

@@ -64,6 +64,9 @@ impl TagToolParser {
 }
 
 impl ToolCallParser for TagToolParser {
+    fn get_tags(&self) -> (String, String) {
+        (self.start_tag.clone(), self.end_tag.clone())
+    }
     fn format_instruction(&self, tools_json: &str) -> String {
         format!(
             "You can use tools. Call format:\n{}{{\"name\":\"tool_name\",\"args\":{{...}}}}{}\nAvailable tools:\n{}",

@@ -7,7 +7,7 @@ use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
-use llama_cpp_2::model::LlamaModel;
+use llama_cpp_2::model::{AddBos, LlamaModel};
 use log::{error, info};
 use std::num::NonZeroU32;
 use std::panic::{self, AssertUnwindSafe};
@@ -137,6 +137,13 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
                     &mut batch,
                     &mut session,
                 );
+                let _ = reply_tx.send(res);
+            }
+            LlamaCommand::CountTokens { text, reply_tx } => {
+                let res = model
+                    .str_to_token(&text, AddBos::Always)
+                    .map(|tokens| tokens.len())
+                    .map_err(|e| crate::error::AmbiError::EngineError(e.to_string()));
                 let _ = reply_tx.send(res);
             }
             LlamaCommand::Shutdown => {

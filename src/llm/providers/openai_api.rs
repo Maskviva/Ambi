@@ -32,6 +32,7 @@ impl OpenAIEngine {
     }
 
     pub async fn generate_response_sync(&self, request: LLMRequest) -> Result<String> {
+        let tool_tags = request.tool_tags.clone();
         let api_request = self.get_request(self.cfg.model_name.clone(), request, false)?;
         let response = self
             .client
@@ -58,9 +59,11 @@ impl OpenAIEngine {
                             .get("arguments")
                             .and_then(|a| a.as_str())
                             .unwrap_or_default();
+                        let (start_tag, end_tag) = &tool_tags;
+
                         simulated.push_str(&format!(
-                            "[TOOL_CALL]{{\"name\":\"{}\",\"args\":{}}}[/TOOL_CALL]",
-                            name, args
+                            "{}{{\"name\":\"{}\",\"args\":{}}}{}",
+                            start_tag, name, args, end_tag
                         ));
                     }
                 }
@@ -80,6 +83,7 @@ impl OpenAIEngine {
             debug!("\n[OpenAI API] Request\n====================\n{}", msg);
         }
 
+        let tool_tags = request.tool_tags.clone();
         let api_request = self.get_request(self.cfg.model_name.clone(), request, true)?;
         let mut stream = self
             .client
@@ -138,9 +142,11 @@ impl OpenAIEngine {
         if !tool_calls_map.is_empty() {
             let mut simulated = String::new();
             for (name, args) in tool_calls_map.values() {
+                let (start_tag, end_tag) = &tool_tags;
+
                 simulated.push_str(&format!(
-                    "[TOOL_CALL]{{\"name\":\"{}\",\"args\":{}}}[/TOOL_CALL]",
-                    name, args
+                    "{}{{\"name\":\"{}\",\"args\":{}}}{}",
+                    start_tag, name, args, end_tag
                 ));
             }
             let _ = tx.send(Ok(simulated)).await;
@@ -159,5 +165,9 @@ impl LLMEngineTrait for OpenAIEngine {
             let _ = tx.send(Err(e)).await;
         }
     }
+
     fn reset_context(&self) {}
+    fn supports_multimodal(&self) -> bool {
+        true
+    }
 }

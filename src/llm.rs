@@ -1,6 +1,7 @@
 pub mod engine;
 pub mod providers;
 pub mod template;
+mod tokenizer;
 
 use crate::types::config;
 

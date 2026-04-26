@@ -5,13 +5,13 @@ use crate::agent::core::{Agent, AgentState, EvictionHandler};
 use crate::agent::tool::{DynTool, StreamFormatter, ToolCallParser, ToolDefinition};
 use crate::error::AmbiError;
 use crate::llm::{ChatTemplate, LLMEngine};
+use crate::types::message::Message;
 use crate::ContentPart;
-use futures::FutureExt;
 use std::collections::HashMap;
-use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use tokio::sync::mpsc::channel;
+use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 
 pub(crate) enum ExecutionMode<'a> {
@@ -48,11 +48,23 @@ pub(crate) struct RunCtx<'a> {
 impl ChatRunner {
     pub(crate) async fn chat_multimodal(
         agent: &Agent,
-        state: &Arc<StdMutex<AgentState>>,
+        state: &Arc<RwLock<AgentState>>,
         parts: Vec<ContentPart>,
     ) -> crate::error::Result<String> {
+        let has_image = parts.iter().any(|p| matches!(p, ContentPart::Image { .. }));
+        if has_image && !agent.llm_engine.supports_multimodal() {
+            return Err(AmbiError::EngineError(
+                "Security Check Failed: The current LLM engine does not support multimodal (image) inputs.".into()
+            ));
+        }
+
+        let user_msg = Message::User {
+            content: parts.clone(),
+        };
+        let tokens = agent.llm_engine.count_tokens(&user_msg.to_string());
+
         let accessor = StateManager(state);
-        accessor.push_user_message(parts)?;
+        accessor.push_user_message(parts, tokens).await?;
 
         let ctx = RunCtx {
             loop_config: LoopConfig {
@@ -77,67 +89,76 @@ impl ChatRunner {
 
     pub(crate) async fn chat_multimodal_stream(
         agent: &Agent,
-        state: &Arc<StdMutex<AgentState>>,
+        state: &Arc<RwLock<AgentState>>,
         parts: Vec<ContentPart>,
     ) -> crate::error::Result<Pin<Box<ReceiverStream<crate::error::Result<String>>>>> {
+        let has_image = parts.iter().any(|p| matches!(p, ContentPart::Image { .. }));
+        if has_image && !agent.llm_engine.supports_multimodal() {
+            return Err(AmbiError::EngineError(
+                "Security Check Failed: The current LLM engine does not support multimodal (image) inputs.".into()
+            ));
+        }
+
         let (tx_out, rx_out) = channel::<crate::error::Result<String>>(1024);
+
+        let tx_out_for_panic = tx_out.clone();
 
         let agent_clone = agent.clone();
         let state_clone = Arc::clone(state);
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let tx_out_clone = tx_out.clone();
 
-            let task_logic = async move {
-                let accessor = StateManager(&state_clone);
-                accessor.push_user_message(parts)?;
+            let user_msg = Message::User {
+                content: parts.clone(),
+            };
+            let tokens = agent_clone.llm_engine.count_tokens(&user_msg.to_string());
+            let accessor = StateManager(&state_clone);
 
-                let ctx = RunCtx {
-                    loop_config: LoopConfig {
-                        template: &agent_clone.config.template,
-                        max_iterations: agent_clone.config.max_iterations,
-                        system_prompt: &agent_clone.config.system_prompt,
-                        eviction_strategy: agent_clone.config.eviction_strategy,
-                        enable_formatting: agent_clone.config.enable_formatting,
-                    },
-                    loop_tooling: LoopTooling {
-                        tools_def: &agent_clone.tools_def,
-                        cached_tool_prompt: &agent_clone.cached_tool_prompt,
-                        tool_map: &agent_clone.tool_map,
-                        tool_parser: &agent_clone.tool_parser,
-                    },
-                    tx_out: Some(&tx_out_clone),
-                    evict_handler: &agent_clone.on_evict_handler,
-                };
+            if let Err(e) = accessor.push_user_message(parts, tokens).await {
+                let _ = tx_out_clone.send(Err(e)).await;
+                return;
+            }
 
-                let mode = ExecutionMode::Stream {
-                    tx_out: &tx_out_clone,
-                    tool_parser: &agent_clone.tool_parser,
+            let ctx = RunCtx {
+                loop_config: LoopConfig {
+                    template: &agent_clone.config.template,
+                    max_iterations: agent_clone.config.max_iterations,
+                    system_prompt: &agent_clone.config.system_prompt,
+                    eviction_strategy: agent_clone.config.eviction_strategy,
                     enable_formatting: agent_clone.config.enable_formatting,
-                };
-
-                Self::run_loop(&ctx, &agent_clone.llm_engine, &accessor, mode).await
+                },
+                loop_tooling: LoopTooling {
+                    tools_def: &agent_clone.tools_def,
+                    cached_tool_prompt: &agent_clone.cached_tool_prompt,
+                    tool_map: &agent_clone.tool_map,
+                    tool_parser: &agent_clone.tool_parser,
+                },
+                tx_out: Some(&tx_out_clone),
+                evict_handler: &agent_clone.on_evict_handler,
             };
 
-            match AssertUnwindSafe(task_logic).catch_unwind().await {
-                Ok(Err(e)) => {
-                    let _ = tx_out.send(Err(e)).await;
-                }
-                Err(panic_err) => {
-                    let msg = panic_err
-                        .downcast_ref::<&str>()
-                        .map(|s| s.to_string())
-                        .or_else(|| panic_err.downcast_ref::<String>().cloned())
-                        .unwrap_or_else(|| "Unknown internal panic".to_string());
-                    log::error!("Pipeline streaming task panicked: {}", msg);
-                    let _ = tx_out
-                        .send(Err(AmbiError::PipelineError(format!(
-                            "Framework panic: {}",
-                            msg
-                        ))))
+            let mode = ExecutionMode::Stream {
+                tx_out: &tx_out_clone,
+                tool_parser: &agent_clone.tool_parser,
+                enable_formatting: agent_clone.config.enable_formatting,
+            };
+
+            if let Err(e) = Self::run_loop(&ctx, &agent_clone.llm_engine, &accessor, mode).await {
+                let _ = tx_out_clone.send(Err(e)).await;
+            }
+        });
+
+        tokio::spawn(async move {
+            if let Err(join_err) = handle.await {
+                if join_err.is_panic() {
+                    log::error!("CRITICAL: Pipeline streaming task panicked internally.");
+                    let _ = tx_out_for_panic
+                        .send(Err(AmbiError::PipelineError(
+                            "Internal framework panic caught, avoiding process crash.".into(),
+                        )))
                         .await;
                 }
-                _ => {}
             }
         });
 
@@ -156,11 +177,11 @@ impl ChatRunner {
             String::new()
         };
         let mut iteration_count = 0;
-        let mut snapshot_len = accessor.get_snapshot_len()?;
+        let mut snapshot_len = accessor.get_snapshot_len().await?;
 
         loop {
             if iteration_count >= ctx.loop_config.max_iterations {
-                accessor.truncate(snapshot_len)?;
+                accessor.truncate(snapshot_len).await?;
                 let err = AmbiError::MaxIterationsReached(ctx.loop_config.max_iterations);
                 return if let Some(tx) = ctx.tx_out {
                     let _ = tx.send(Err(err)).await;
@@ -170,18 +191,21 @@ impl ChatRunner {
                 };
             }
 
-            let req_data = accessor.get_llm_request(
-                ctx.loop_config.system_prompt,
-                ctx.loop_config.template,
-                ctx.loop_tooling.tools_def,
-                ctx.loop_tooling.cached_tool_prompt,
-            )?;
+            let req_data = accessor
+                .get_llm_request(
+                    ctx.loop_config.system_prompt,
+                    ctx.loop_config.template,
+                    ctx.loop_tooling.tools_def,
+                    ctx.loop_tooling.cached_tool_prompt,
+                    ctx.loop_tooling.tool_parser.get_tags(),
+                )
+                .await?;
 
             let (full_output, has_error) = match &mode {
                 ExecutionMode::Sync => match engine.chat(req_data).await {
                     Ok(res) => (res, false),
                     Err(e) => {
-                        accessor.truncate(snapshot_len)?;
+                        accessor.truncate(snapshot_len).await?;
                         return Err(e);
                     }
                 },
@@ -199,22 +223,49 @@ impl ChatRunner {
             };
 
             if has_error {
-                accessor.truncate(snapshot_len)?;
+                accessor.truncate(snapshot_len).await?;
                 break;
             }
 
-            let dynamic_system_overhead = accessor.get_system_overhead()?;
+            let parsed_tool_calls = ctx.loop_tooling.tool_parser.parse(&full_output);
+            let tool_calls_with_ids: Vec<_> = parsed_tool_calls
+                .into_iter()
+                .enumerate()
+                .map(|(i, (name, args))| {
+                    let id = format!(
+                        "call_ambi_{}_{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis(),
+                        i
+                    );
+                    (name, args, id)
+                })
+                .collect();
+
+            let asst_msg = Message::Assistant {
+                content: full_output.clone(),
+                tool_calls: tool_calls_with_ids.clone(),
+            };
+            let tokens = engine.count_tokens(&asst_msg.to_string());
+
+            let dynamic_system_overhead = accessor.get_system_overhead().await?;
             let prompt_overhead = (ctx.loop_config.system_prompt.len()
                 + ctx.loop_tooling.cached_tool_prompt.len())
                 / 4
                 + dynamic_system_overhead;
 
-            let evicted_count = accessor.append_assistant_message_and_evict(
-                full_output.clone(),
-                ctx.evict_handler,
-                ctx.loop_config.eviction_strategy,
-                prompt_overhead,
-            )?;
+            let evicted_count = accessor
+                .append_assistant_message_and_evict(
+                    full_output.clone(),
+                    tool_calls_with_ids.clone(),
+                    tokens,
+                    ctx.evict_handler,
+                    ctx.loop_config.eviction_strategy,
+                    prompt_overhead,
+                )
+                .await?;
             snapshot_len = snapshot_len.saturating_sub(evicted_count);
 
             if ctx.tx_out.is_none() {
@@ -229,16 +280,16 @@ impl ChatRunner {
 
             let tool_calls = match Self::handle_tool_calls(
                 accessor,
+                engine,
                 Arc::clone(ctx.loop_tooling.tool_map),
-                ctx.loop_tooling.tool_parser,
-                &full_output,
+                tool_calls_with_ids,
                 ctx.tx_out.cloned(),
             )
             .await
             {
                 Ok(calls) => calls,
                 Err(e) => {
-                    accessor.truncate(snapshot_len)?;
+                    accessor.truncate(snapshot_len).await?;
                     return if let Some(tx) = ctx.tx_out {
                         let _ = tx.send(Err(AmbiError::ToolError(e.to_string()))).await;
                         Ok(String::new())

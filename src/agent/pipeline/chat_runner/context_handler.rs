@@ -1,83 +1,96 @@
 // src/agent/pipeline/chat_runner/context_handler.rs
 
 use super::StateManager;
-use crate::agent::core::{Agent, AgentState, EvictionHandler};
+use crate::agent::core::{Agent, EvictionHandler};
 use crate::agent::tool::ToolDefinition;
-use crate::error::{AmbiError, Result};
+use crate::error::Result;
 use crate::llm::ChatTemplate;
 use crate::types::message::{ContentPart, Message};
 use crate::types::request::LLMRequest;
-use std::sync::MutexGuard;
 
 impl<'a> StateManager<'a> {
-    fn get_lock(&self) -> Result<MutexGuard<'_, AgentState>> {
-        self.0.lock().map_err(|_| {
-            AmbiError::AgentError(
-                "AgentState lock is poisoned due to a previous panic.".to_string(),
-            )
-        })
-    }
-
-    pub fn push_user_message(&self, parts: Vec<ContentPart>) -> Result<()> {
-        self.get_lock()?
+    pub async fn push_user_message(&self, parts: Vec<ContentPart>, tokens: usize) -> Result<()> {
+        self.0
+            .write()
+            .await
             .chat_history
-            .push(Message::User { content: parts });
+            .push(Message::User { content: parts }, tokens);
         Ok(())
     }
 
-    pub fn push_tool_message(&self, content: String) -> Result<()> {
-        self.get_lock()?
+    pub async fn push_tool_message(
+        &self,
+        content: String,
+        tool_id: Option<String>,
+        tokens: usize,
+    ) -> Result<()> {
+        self.0
+            .write()
+            .await
             .chat_history
-            .push(Message::Tool { content });
+            .push(Message::Tool { content, tool_id }, tokens);
         Ok(())
     }
 
-    pub fn get_snapshot_len(&self) -> Result<usize> {
-        Ok(self.get_lock()?.chat_history.len())
+    pub async fn get_snapshot_len(&self) -> Result<usize> {
+        Ok(self.0.read().await.chat_history.len())
     }
 
-    pub fn truncate(&self, len: usize) -> Result<()> {
-        self.get_lock()?.chat_history.truncate(len);
+    pub async fn truncate(&self, len: usize) -> Result<()> {
+        self.0.write().await.chat_history.truncate(len);
         Ok(())
     }
 
-    pub fn get_llm_request(
+    pub async fn get_llm_request(
         &self,
         system_prompt: &str,
         tpl: &ChatTemplate,
         tools: &[ToolDefinition],
         cached_tool_prompt: &str,
+        tool_tags: (String, String),
     ) -> Result<LLMRequest> {
-        let lock = self.get_lock()?;
+        let lock = self.0.read().await;
         Ok(Agent::get_llm_request(
             &lock,
             system_prompt,
             tpl,
             tools,
             cached_tool_prompt,
+            tool_tags,
         ))
     }
 
-    pub fn get_system_overhead(&self) -> Result<usize> {
+    pub async fn get_system_overhead(&self) -> Result<usize> {
         Ok(self
-            .get_lock()?
+            .0
+            .read()
+            .await
             .chat_history
             .all()
             .iter()
-            .filter(|m| matches!(***m, Message::System { .. }))
-            .map(|m| m.estimate_tokens())
+            .filter(|(m, _)| matches!(**m, Message::System { .. }))
+            .map(|(_, t)| *t)
             .sum())
     }
 
-    pub fn append_assistant_message_and_evict(
+    #[allow(clippy::too_many_arguments)]
+    pub async fn append_assistant_message_and_evict(
         &self,
         content: String,
+        tool_calls: Vec<(String, serde_json::Value, String)>,
+        tokens: usize,
         handler: &Option<EvictionHandler>,
         eviction_strategy: (usize, usize, usize),
         prompt_overhead: usize,
     ) -> Result<usize> {
-        let mut lock = self.get_lock()?;
-        lock.chat_history.push(Message::Assistant { content });
+        let mut lock = self.0.write().await;
+        lock.chat_history.push(
+            Message::Assistant {
+                content,
+                tool_calls,
+            },
+            tokens,
+        );
 
         let evicted_msgs = lock.chat_history.evict_old_messages(
             eviction_strategy.0,
