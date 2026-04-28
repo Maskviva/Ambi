@@ -83,9 +83,20 @@ impl Agent {
 
         for msg in filtered_history {
             match &**msg {
-                Message::User { .. } => {
+                Message::User { content } => {
                     prompt.push_str(&tpl.user_prefix);
-                    prompt.push_str(&msg.to_string());
+                    let mut user_text = String::new();
+                    let mut has_image = false;
+                    for part in content {
+                        match part {
+                            ContentPart::Text { text } => user_text.push_str(text),
+                            ContentPart::Image { .. } => has_image = true,
+                        }
+                    }
+                    prompt.push_str(&user_text);
+                    if has_image {
+                        prompt.push_str("<__media__>");
+                    }
                     prompt.push_str(&tpl.user_suffix);
                 }
                 Message::Tool { content, tool_id } => {

@@ -29,12 +29,8 @@ impl TagToolParser {
         s.trim()
     }
 
-    fn extract_and_push_call(json_str: &str, calls: &mut Vec<(String, Value)>) {
-        if json_str.is_empty() {
-            return;
-        }
-
-        if let Ok(val) = serde_json::from_str::<Value>(json_str) {
+    fn parser_str(calls: &mut Vec<(String, Value)>, str: &str) -> bool {
+        if let Ok(val) = serde_json::from_str::<Value>(str) {
             let mut process_item = |item: &Value| {
                 if let (Some(name), Some(args)) =
                     (item.get("name").and_then(|n| n.as_str()), item.get("args"))
@@ -50,16 +46,37 @@ impl TagToolParser {
                     process_item(item);
                 }
             }
+            true
         } else {
-            log::warn!("Failed to parse Tool JSON: {}", json_str);
-            calls.push((
-                "__format_error__".to_string(),
-                serde_json::json!({
-                    "error": "Invalid JSON syntax",
-                    "raw": json_str
-                }),
-            ));
+            false
         }
+    }
+
+    fn extract_and_push_call(json_str: &str, calls: &mut Vec<(String, Value)>) {
+        let trimmed = json_str.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+
+        if Self::parser_str(calls, trimmed) {
+            return;
+        }
+
+        if let Some(last_brace) = trimmed.rfind('}') {
+            let truncated = &trimmed[..=last_brace];
+            if Self::parser_str(calls, truncated) {
+                return;
+            }
+        }
+
+        log::warn!("Failed to parse Tool JSON: {}", trimmed);
+        calls.push((
+            "__format_error__".to_string(),
+            serde_json::json!({
+                "error": "Invalid JSON syntax",
+                "raw": trimmed
+            }),
+        ));
     }
 }
 

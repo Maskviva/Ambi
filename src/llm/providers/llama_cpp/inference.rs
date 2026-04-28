@@ -11,6 +11,9 @@ use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
 use log::{debug, info, warn};
 
+#[cfg(feature = "mtmd")]
+use llama_cpp_2::mtmd::MtmdInputText;
+
 impl InferenceSession {
     /// Execute a full completion loop for the given prompt.
     ///
@@ -46,9 +49,32 @@ impl InferenceSession {
         Self::validate_prompt_length(&current_tokens, cfg)?;
         let dynamic_max_tokens = Self::calculate_max_tokens(&current_tokens, cfg)?;
 
-        let match_len = Self::handle_kv_cache(session, context, &current_tokens);
+        let match_len = if images.is_empty() {
+            Self::handle_kv_cache(session, context, &current_tokens)
+        } else {
+            0
+        };
 
+        // Process image presence (validation / error for unsupported configurations)
         Self::process_images(images, vision_ctx)?;
+
+        // Multimodal: if we have images AND a valid ExternalProjector (mtmd feature),
+        // delegate to dedicated multimodal inference path.
+        #[cfg(feature = "mtmd")]
+        if !images.is_empty() && matches!(vision_ctx, Some(VisionContext::ExternalProjector { .. }))
+        {
+            return Self::multimodal_inference(
+                prompt,
+                images,
+                vision_ctx,
+                model,
+                context,
+                batch,
+                session,
+                cfg,
+                &mut callback,
+            );
+        }
 
         Self::eval_new_tokens(
             session,
@@ -165,15 +191,29 @@ impl InferenceSession {
         match vision_ctx {
             None => Err(AmbiError::EngineError(
                 "Multimodal input received, but no vision context is configured. \
-             Set `mmproj_path` or `integrated_vision` in LlamaEngineConfig."
+                 Set `mmproj_path` or `integrated_vision` in LlamaEngineConfig."
                     .into(),
             )),
-            Some(VisionContext::ExternalProjector { .. }) => Err(AmbiError::EngineError(
-                "External projector (mmproj) multimodal support is not yet implemented. \
-             It will be available in Ambi 0.3.0."
+            Some(VisionContext::ExternalProjector { .. }) => {
+                // When mtmd feature is enabled, the actual handling is done
+                // in the caller (run_inference). Here we just allow it.
+                #[cfg(feature = "mtmd")]
+                {
+                    Ok(())
+                }
+                #[cfg(not(feature = "mtmd"))]
+                {
+                    Err(AmbiError::EngineError(
+                        "External projector (mmproj) multimodal support requires the 'mtmd' feature."
+                            .into(),
+                    ))
+                }
+            }
+            Some(VisionContext::Integrated) => Err(AmbiError::EngineError(
+                "Native integrated vision support is not yet implemented. \
+     To use multimodal models, enable the 'mtmd' feature and provide an 'mmproj_path'."
                     .into(),
             )),
-            Some(VisionContext::Integrated) => Ok(()),
         }
     }
 
@@ -242,8 +282,10 @@ impl InferenceSession {
         F: FnMut(String) -> bool,
     {
         let mut decoded_count = 0;
+        let mut logits_idx = -1;
+
         loop {
-            let next_token = sampler.sample(context, batch.n_tokens() - 1);
+            let next_token = sampler.sample(context, logits_idx);
             sampler.accept(next_token);
 
             if model.is_eog_token(next_token) || decoded_count >= dynamic_max_tokens {
@@ -302,6 +344,8 @@ impl InferenceSession {
                 AmbiError::EngineError(format!("Decoding failed: {}", e))
             })?;
 
+            logits_idx = 0;
+
             session.pos += 1;
             decoded_count += 1;
         }
@@ -317,5 +361,97 @@ impl InferenceSession {
     ) {
         session.restore(snapshot.clone());
         context.clear_kv_cache();
+    }
+
+    #[cfg(feature = "mtmd")]
+    fn multimodal_inference<F>(
+        prompt: &str,
+        images: &[String],
+        vision_ctx: Option<&VisionContext>,
+        model: &LlamaModel,
+        context: &mut LlamaContext,
+        batch: &mut LlamaBatch,
+        session: &mut InferenceSession,
+        cfg: &LlamaEngineConfig,
+        callback: &mut F,
+    ) -> Result<()>
+    where
+        F: FnMut(String) -> bool,
+    {
+        use llama_cpp_2::mtmd::MtmdInputChunkType;
+
+        let snapshot = session.snapshot();
+
+        // Multimodal mode: start with a clean slate to avoid mixing with prior
+        // text-only history and KV cache that may not contain media markers.
+        session.reset();
+        context.clear_kv_cache();
+
+        let mtmd_ctx = match vision_ctx {
+            Some(VisionContext::ExternalProjector { mtmd_ctx }) => mtmd_ctx,
+            _ => {
+                return Err(AmbiError::EngineError(
+                    "Missing MTMD context for multimodal inference".into(),
+                ))
+            }
+        };
+
+        let bitmaps = vision_ctx.unwrap().create_bitmaps(images)?;
+        let bitmap_refs: Vec<_> = bitmaps.iter().collect();
+
+        let text_input = MtmdInputText {
+            text: prompt.to_string(),
+            add_special: true,
+            parse_special: true,
+        };
+
+        let chunks = mtmd_ctx
+            .tokenize(text_input, &bitmap_refs)
+            .map_err(|e| AmbiError::EngineError(format!("MTMD tokenize error: {}", e)))?;
+
+        // Collect all text tokens to populate session.history_tokens
+        let mut all_tokens = Vec::new();
+        for i in 0..chunks.len() {
+            if let Some(chunk) = chunks.get(i) {
+                if chunk.chunk_type() == MtmdInputChunkType::Text {
+                    if let Some(tokens) = chunk.text_tokens() {
+                        all_tokens.extend_from_slice(tokens);
+                    }
+                }
+            }
+        }
+
+        // Evaluate all chunks (text + image embeddings)
+        let n_past = 0; // session is freshly reset
+        let new_n_past = chunks
+            .eval_chunks(
+                mtmd_ctx,
+                context,
+                n_past,
+                0,                   // seq_id
+                cfg.n_tokens as i32, // n_batch
+                true,                // logits_last
+            )
+            .map_err(|e| AmbiError::EngineError(format!("MTMD eval error: {}", e)))?;
+
+        // Update session state to reflect all processed tokens
+        session.history_tokens = all_tokens;
+        session.pos = new_n_past;
+
+        // Now continue with normal generation
+        let mut sampler = Self::create_sampler(cfg);
+        let dynamic_max_tokens = Self::calculate_max_tokens(&session.history_tokens, cfg)?;
+
+        Self::generation_loop(
+            session,
+            model,
+            context,
+            batch,
+            cfg,
+            &mut sampler,
+            dynamic_max_tokens,
+            &snapshot,
+            callback,
+        )
     }
 }

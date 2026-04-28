@@ -1,9 +1,6 @@
 # Ambi
 
 ---
-[](https://github.com/maskviva/ambi)
-[](https://crates.io/crates/ambi)
-[](https://docs.rs/ambi)
 
 <p align="center">
   <a href="https://spdx.org/licenses/Apache-2.0.html"><img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License: GPL v3"></a>

@@ -90,10 +90,6 @@ impl StreamFormatter for TagStreamFormatter {
         self.buffer.push_str(token);
 
         if self.buffer.len() > self.max_buffer_size {
-            log::error!(
-                "Formatter buffer overflow (>{}). Force flushing to prevent OOM.",
-                self.max_buffer_size
-            );
             self.buffer.clear();
             self.in_tool_call = false;
             self.started = true;
@@ -119,9 +115,13 @@ impl StreamFormatter for TagStreamFormatter {
                     continue;
                 } else if self.buffer.contains(&self.start_tag) {
                     self.started = true;
-                } else if self.suffix_matches_tag_prefix(&self.buffer, "<think>")
-                    || self.suffix_matches_tag_prefix(&self.buffer, &self.start_tag)
-                {
+                } else if self.suffix_matches_tag_prefix(&self.buffer, "<think>") {
+                    break;
+                } else if self.suffix_matches_tag_prefix(&self.buffer, &self.start_tag) {
+                    if !trimmed.is_empty() {
+                        output.push_str("[Content]: ");
+                        self.started = true;
+                    }
                     break;
                 } else if !trimmed.is_empty() {
                     output.push_str("[Content]: ");

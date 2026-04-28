@@ -95,7 +95,7 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
     };
 
     // Core Initialization: Delegate vision strategy resolution to VisionContext
-    let vision_ctx = VisionContext::init(cfg.mmproj_path.as_ref(), cfg.integrated_vision)
+    let vision_ctx = VisionContext::init(cfg.mmproj_path.as_ref(), cfg.integrated_vision, &model)
         .unwrap_or_else(|e| {
             error!(
                 "Failed to initialize Vision Context: {}. Multimodal processing disabled.",

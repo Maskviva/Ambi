@@ -89,6 +89,10 @@ impl LLMEngineTrait for LlamaEngine {
         self.reset_internal();
     }
 
+    fn supports_multimodal(&self) -> bool {
+        self._supports_multimodal
+    }
+
     async fn evaluate_sentence_entropy(&self, sentence: &str) -> Result<f32> {
         self.evaluate_sentence_entropy_internal(sentence).await
     }

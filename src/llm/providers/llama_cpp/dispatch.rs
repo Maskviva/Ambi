@@ -89,6 +89,7 @@ impl LlamaEngine {
     }
 
     /// Exactly compute token count using the native model.
+    #[allow(unused)]
     pub(crate) async fn count_tokens_internal(&self, text: &str) -> Result<usize> {
         let (reply_tx, reply_rx) = oneshot::channel();
 
