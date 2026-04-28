@@ -48,16 +48,21 @@ impl OpenAIEngine {
                                         .into(),
                                 );
                             }
-                            ContentPart::Image { url } => {
+                            ContentPart::Image { base64 } => {
+                                let safe_url = if base64.starts_with("data:image")
+                                    || base64.starts_with("http")
+                                {
+                                    base64.clone()
+                                } else {
+                                    format!("data:image/jpeg;base64,{}", base64)
+                                };
+
                                 parts.push(
                                     ChatCompletionRequestMessageContentPartImageArgs::default()
                                         .image_url(
-                                            ImageUrlArgs::default()
-                                                .url(url.clone())
-                                                .build()
-                                                .map_err(|e| {
-                                                    AmbiError::EngineError(e.to_string())
-                                                })?,
+                                            ImageUrlArgs::default().url(safe_url).build().map_err(
+                                                |e| AmbiError::EngineError(e.to_string()),
+                                            )?,
                                         )
                                         .build()
                                         .map_err(|e| AmbiError::EngineError(e.to_string()))?

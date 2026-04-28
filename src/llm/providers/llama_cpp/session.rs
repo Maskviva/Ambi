@@ -1,4 +1,4 @@
-// src/llm/providers/llama_cpp/engine/session.rs
+// src/llm/providers/llama_cpp/session.rs
 
 use llama_cpp_2::token::LlamaToken;
 
@@ -22,6 +22,22 @@ impl InferenceSession {
             utf8_buffer: Vec::with_capacity(32),
             pos: 0,
         }
+    }
+
+    /// Create a snapshot of the current state
+    pub fn snapshot(&self) -> (Vec<LlamaToken>, Vec<u8>, i32) {
+        (
+            self.history_tokens.clone(),
+            self.utf8_buffer.clone(),
+            self.pos,
+        )
+    }
+
+    /// Restore state from snapshot
+    pub fn restore(&mut self, snapshot: (Vec<LlamaToken>, Vec<u8>, i32)) {
+        self.history_tokens = snapshot.0;
+        self.utf8_buffer = snapshot.1;
+        self.pos = snapshot.2;
     }
 
     pub fn reset(&mut self) {

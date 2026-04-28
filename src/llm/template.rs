@@ -51,6 +51,9 @@ pub struct ChatTemplate {
     pub assistant_suffix: String,
     pub tool_prefix: String,
     pub tool_suffix: String,
+
+    pub tool_id_prefix: String,
+    pub tool_id_suffix: String,
 }
 
 impl ChatTemplate {
@@ -64,6 +67,8 @@ impl ChatTemplate {
             assistant_suffix: "<|im_end|>\n".to_string(),
             tool_prefix: "<|im_start|>tool\n".to_string(),
             tool_suffix: "<|im_end|>\n".to_string(),
+            tool_id_prefix: String::new(),
+            tool_id_suffix: String::new(),
         }
     }
 
@@ -77,6 +82,8 @@ impl ChatTemplate {
             assistant_suffix: "<|eot_id|>\n".to_string(),
             tool_prefix: "<|start_header_id|>tool<|end_header_id|>\n\n".to_string(),
             tool_suffix: "<|eot_id|>\n".to_string(),
+            tool_id_prefix: String::new(),
+            tool_id_suffix: String::new(),
         }
     }
 
@@ -90,6 +97,8 @@ impl ChatTemplate {
             assistant_suffix: "<end_of_turn>\n".to_string(),
             tool_prefix: "<start_of_turn>tool\n".to_string(),
             tool_suffix: "<end_of_turn>\n".to_string(),
+            tool_id_prefix: String::new(),
+            tool_id_suffix: String::new(),
         }
     }
 
@@ -103,6 +112,8 @@ impl ChatTemplate {
             assistant_suffix: "<|end|>\n".to_string(),
             tool_prefix: "<|tool|>\n".to_string(),
             tool_suffix: "<|end|>\n".to_string(),
+            tool_id_prefix: String::new(),
+            tool_id_suffix: String::new(),
         }
     }
 
@@ -116,6 +127,8 @@ impl ChatTemplate {
             assistant_suffix: "</s>\n".to_string(),
             tool_prefix: "<|tool|>\n".to_string(),
             tool_suffix: "</s>\n".to_string(),
+            tool_id_prefix: String::new(),
+            tool_id_suffix: String::new(),
         }
     }
 
@@ -129,6 +142,8 @@ impl ChatTemplate {
             assistant_suffix: "<｜end of sentence｜>".to_string(),
             tool_prefix: "<｜tool output｜>\n".to_string(),
             tool_suffix: "\n".to_string(),
+            tool_id_prefix: String::new(),
+            tool_id_suffix: String::new(),
         }
     }
 
@@ -142,6 +157,8 @@ impl ChatTemplate {
             assistant_suffix: "</s>\n".to_string(),
             tool_prefix: "[AVAILABLE_TOOLS] ".to_string(),
             tool_suffix: " [/AVAILABLE_TOOLS]\n".to_string(),
+            tool_id_prefix: String::new(),
+            tool_id_suffix: String::new(),
         }
     }
 
@@ -155,6 +172,8 @@ impl ChatTemplate {
             assistant_suffix: " </s><s>".to_string(),
             tool_prefix: " [TOOL] ".to_string(),
             tool_suffix: " [/TOOL] ".to_string(),
+            tool_id_prefix: String::new(),
+            tool_id_suffix: String::new(),
         }
     }
 
@@ -168,6 +187,8 @@ impl ChatTemplate {
             assistant_suffix: template.assistant_suffix,
             tool_prefix: template.tool_prefix,
             tool_suffix: template.tool_suffix,
+            tool_id_prefix: String::new(),
+            tool_id_suffix: String::new(),
         }
     }
 }

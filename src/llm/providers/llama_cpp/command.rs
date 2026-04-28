@@ -1,4 +1,4 @@
-// src/llm/providers/llama_cpp/engine/command.rs
+// src/llm/providers/llama_cpp/command.rs
 
 use tokio::sync::{mpsc, oneshot};
 
@@ -12,12 +12,14 @@ pub(crate) enum LlamaCommand {
     Chat {
         /// The full prompt formatted by the frontend.
         prompt: String,
+        images: Vec<String>, // Multimodal payload
         /// Channel to receive the final completion or an error.
         reply_tx: oneshot::Sender<crate::error::Result<String>>,
     },
     /// Run a streaming completion request.
     ChatStream {
         prompt: String,
+        images: Vec<String>, // Multimodal payload
         /// Unbounded sender for individual text chunks (each is `Ok(String)`).
         /// An `Err(...)` terminal message may be pushed when an error occurs.
         chunk_tx: mpsc::Sender<crate::error::Result<String>>,

@@ -1,4 +1,5 @@
 // src/types/request.rs
+
 use crate::agent::ToolDefinition;
 use crate::types::message::Message;
 use std::sync::Arc;
@@ -11,4 +12,5 @@ pub struct LLMRequest {
     pub tool_prompt: String,
     pub formatted_prompt: String,
     pub tool_tags: (String, String),
+    pub images: Vec<String>,
 }

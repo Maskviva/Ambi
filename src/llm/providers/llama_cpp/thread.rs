@@ -1,7 +1,8 @@
-// src/llm/providers/llama_cpp/engine/thread.rs
+// src/llm/providers/llama_cpp/thread.rs
 
 use crate::llm::providers::llama_cpp::command::LlamaCommand;
 use crate::llm::providers::llama_cpp::session::InferenceSession;
+use crate::llm::providers::llama_cpp::vision::VisionContext;
 use crate::types::config::LlamaEngineConfig;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -12,18 +13,29 @@ use log::{error, info};
 use std::num::NonZeroU32;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 pub(crate) fn spawn_engine_thread(
     cfg: LlamaEngineConfig,
-) -> crate::error::Result<(UnboundedSender<LlamaCommand>, JoinHandle<()>)> {
+) -> crate::error::Result<(
+    UnboundedSender<LlamaCommand>,
+    JoinHandle<()>,
+    Arc<AtomicBool>,
+)> {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<LlamaCommand>();
+    let alive = Arc::new(AtomicBool::new(true));
+    let alive_clone = alive.clone();
 
     let handle = thread::spawn(move || {
         let result = panic::catch_unwind(AssertUnwindSafe(|| {
             engine_main(cfg, cmd_rx);
         }));
+
+        alive_clone.store(false, Ordering::SeqCst);
+
         if let Err(panic_err) = result {
             let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
                 s.to_string()
@@ -36,7 +48,7 @@ pub(crate) fn spawn_engine_thread(
         }
     });
 
-    Ok((cmd_tx, handle))
+    Ok((cmd_tx, handle, alive))
 }
 
 fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaCommand>) {
@@ -82,6 +94,16 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
         }
     };
 
+    // Core Initialization: Delegate vision strategy resolution to VisionContext
+    let vision_ctx = VisionContext::init(cfg.mmproj_path.as_ref(), cfg.integrated_vision)
+        .unwrap_or_else(|e| {
+            error!(
+                "Failed to initialize Vision Context: {}. Multimodal processing disabled.",
+                e
+            );
+            None
+        });
+
     let mut batch = LlamaBatch::new(cfg.n_tokens, cfg.n_seq_max);
     let mut session = InferenceSession::new();
 
@@ -89,10 +111,16 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
 
     while let Some(cmd) = cmd_rx.blocking_recv() {
         match cmd {
-            LlamaCommand::Chat { prompt, reply_tx } => {
+            LlamaCommand::Chat {
+                prompt,
+                images,
+                reply_tx,
+            } => {
                 let mut full_response = String::new();
                 let res = InferenceSession::run_inference(
                     &prompt,
+                    &images,
+                    vision_ctx.as_ref(),
                     &model,
                     &mut context,
                     &mut batch,
@@ -107,11 +135,14 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
             }
             LlamaCommand::ChatStream {
                 prompt,
+                images,
                 chunk_tx,
                 done_tx,
             } => {
                 let res = InferenceSession::run_inference(
                     &prompt,
+                    &images,
+                    vision_ctx.as_ref(),
                     &model,
                     &mut context,
                     &mut batch,

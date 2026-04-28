@@ -69,12 +69,15 @@ impl TagStreamFormatter {
     fn process_text(&self, text: &str) -> String {
         text.replace("</think>", "\n\n[Content]: ")
     }
-    fn is_partial_match(&self, text: &str, tag: &str) -> bool {
-        tag.starts_with(text)
-    }
     fn ends_with_partial_tag(&self, text: &str, tag: &str) -> bool {
-        for (i, _) in tag.char_indices().skip(1) {
-            if text.ends_with(&tag[..i]) {
+        self.suffix_matches_tag_prefix(text, tag)
+    }
+
+    fn suffix_matches_tag_prefix(&self, text: &str, tag: &str) -> bool {
+        // Check one by one whether the shortest prefix of the tag (length 1) to the full length matches the suffix of the text
+        for len in 1..=tag.len() {
+            let prefix = &tag[..len];
+            if text.ends_with(prefix) {
                 return true;
             }
         }
@@ -95,7 +98,11 @@ impl StreamFormatter for TagStreamFormatter {
             self.in_tool_call = false;
             self.started = true;
 
-            return "\n\n[Error: Tool output exceeded safety limits and was truncated by the system]\n\n".to_string();
+            log::error!(
+                "Formatter buffer overflow (>{}). Discarding buffered data to prevent OOM.",
+                self.max_buffer_size
+            );
+            return String::new();
         }
 
         let mut output = String::new();
@@ -112,8 +119,8 @@ impl StreamFormatter for TagStreamFormatter {
                     continue;
                 } else if self.buffer.contains(&self.start_tag) {
                     self.started = true;
-                } else if self.is_partial_match(trimmed, "<think>")
-                    || self.is_partial_match(trimmed, &self.start_tag)
+                } else if self.suffix_matches_tag_prefix(&self.buffer, "<think>")
+                    || self.suffix_matches_tag_prefix(&self.buffer, &self.start_tag)
                 {
                     break;
                 } else if !trimmed.is_empty() {

@@ -4,7 +4,7 @@ mod agent;
 mod llama_cpp;
 mod open_ai;
 
-pub use agent::AgentConfig;
+pub use agent::{AgentConfig, EvictionStrategy};
 
 #[cfg(feature = "llama-cpp")]
 pub use llama_cpp::LlamaEngineConfig;

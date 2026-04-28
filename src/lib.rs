@@ -1,3 +1,12 @@
+//! # Runtime Requirements
+//!
+//! Ambi requires the **Tokio** async runtime with the `rt-multi-thread` feature.
+//! The following is the minimum setup in `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+//! ```
 #[cfg(any(
     all(feature = "cuda", feature = "vulkan"),
     all(feature = "cuda", feature = "metal"),

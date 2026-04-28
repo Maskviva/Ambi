@@ -13,9 +13,11 @@ mod tests {
 
         let cfg = LlamaEngineConfig {
             model_path,
+            mmproj_path: None,
+            integrated_vision: false,
             max_tokens: 2048,
             buffer_size: 32,
-            use_gpu: true,
+            use_gpu: false,
             n_gpu_layers: 99,
             n_ctx: 4096,
             n_tokens: 4096,
@@ -37,7 +39,7 @@ mod tests {
         let agent_state = Arc::new(RwLock::new(AgentState::new()));
 
         let mut res_stream =
-            ChatRunner::chat_stream(&chat_runner, &agent, &agent_state, "who are you")
+            ChatRunner::chat_stream(&chat_runner, &agent, &agent_state, "我的名字是什么？")
                 .await
                 .unwrap();
 

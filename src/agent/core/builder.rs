@@ -1,11 +1,13 @@
 // src/agent/core/builder.rs
+
 use super::Agent;
 use crate::agent::tool::{DefaultToolParser, Tool, ToolCallParser, ToolDefinition};
 use crate::error::{AmbiError, Result};
 use crate::llm::{ChatTemplate, LLMEngine, LLMEngineConfig, LLMEngineTrait};
+use crate::types::config::EvictionStrategy;
 use crate::types::message::Message;
-
 use crate::types::AgentConfig;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -39,18 +41,13 @@ impl Agent {
         }
     }
 
-    pub fn enable_formatting(mut self, enable: bool) -> Self {
+    pub fn with_formatting(mut self, enable: bool) -> Self {
         self.config.enable_formatting = enable;
         self
     }
 
-    pub fn with_eviction_strategy(
-        mut self,
-        keep_head: usize,
-        keep_tail: usize,
-        max_safe_tokens: usize,
-    ) -> Self {
-        self.config.eviction_strategy = (keep_head, keep_tail, max_safe_tokens);
+    pub fn with_eviction_strategy(mut self, strategy: EvictionStrategy) -> Self {
+        self.config.eviction_strategy = strategy;
         self
     }
 

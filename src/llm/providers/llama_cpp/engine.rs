@@ -1,4 +1,4 @@
-// src/llm/providers/llama_cpp/engine/engine.rs
+// src/llm/providers/llama_cpp/engine.rs
 
 use crate::error::Result;
 use crate::llm::providers::llama_cpp::command::LlamaCommand;
@@ -7,6 +7,8 @@ use crate::llm::LLMEngineTrait;
 use crate::types::config::LlamaEngineConfig;
 use crate::types::LLMRequest;
 use async_trait::async_trait;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use tokio::sync::mpsc::{Sender, UnboundedSender};
 
@@ -19,6 +21,10 @@ pub struct LlamaEngine {
     pub(crate) cmd_tx: UnboundedSender<LlamaCommand>,
     /// Join handle for the background thread (used during graceful shutdown).
     _handle: Option<JoinHandle<()>>,
+
+    pub(crate) _supports_multimodal: bool,
+
+    alive: Arc<AtomicBool>,
 }
 
 impl LlamaEngine {
@@ -31,6 +37,9 @@ impl LlamaEngine {
     pub fn load(cfg: LlamaEngineConfig) -> Result<Self> {
         cfg.validate()?;
 
+        // Dynamically determine multimodal capabilities based on config flags
+        let supports_multimodal = cfg.mmproj_path.is_some() || cfg.integrated_vision;
+
         unsafe {
             llama_cpp_sys_2::llama_log_set(
                 Some(super::callback::llama_log_callback),
@@ -38,12 +47,18 @@ impl LlamaEngine {
             );
         }
 
-        let (cmd_tx, handle) = thread::spawn_engine_thread(cfg)?;
+        let (cmd_tx, handle, alive) = thread::spawn_engine_thread(cfg)?;
 
         Ok(Self {
             cmd_tx,
             _handle: Some(handle),
+            _supports_multimodal: supports_multimodal,
+            alive,
         })
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::SeqCst)
     }
 }
 
@@ -61,11 +76,13 @@ impl Drop for LlamaEngine {
 #[async_trait]
 impl LLMEngineTrait for LlamaEngine {
     async fn chat(&self, request: LLMRequest) -> Result<String> {
-        self.chat_internal(&request.formatted_prompt).await
+        self.chat_internal(&request.formatted_prompt, request.images)
+            .await
     }
 
     async fn chat_stream(&self, request: LLMRequest, tx: Sender<Result<String>>) {
-        self.stream_internal(&request.formatted_prompt, tx).await;
+        self.stream_internal(&request.formatted_prompt, request.images, tx)
+            .await;
     }
 
     fn reset_context(&self) {

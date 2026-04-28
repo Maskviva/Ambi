@@ -7,7 +7,7 @@ use std::fmt;
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ContentPart {
     Text { text: String },
-    Image { url: String },
+    Image { base64: String },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -46,21 +46,17 @@ impl Message {
         }
     }
 
-    pub fn user_multimodal(text: &str, image_url: &str) -> Self {
+    pub fn user_multimodal(text: &str, image_base64: &str) -> Self {
         Self::User {
             content: vec![
                 ContentPart::Text {
                     text: text.to_string(),
                 },
                 ContentPart::Image {
-                    url: image_url.to_string(),
+                    base64: image_base64.to_string(),
                 },
             ],
         }
-    }
-
-    pub fn estimate_tokens(&self) -> usize {
-        self.to_string().len() / 4
     }
 }
 

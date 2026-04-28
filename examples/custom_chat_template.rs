@@ -27,6 +27,8 @@ async fn main() -> Result<()> {
         assistant_suffix: "<|EOT|>\n".to_string(), // Suffix marking the end of the assistant's response.
         tool_prefix: "<|TOOL_EXECUTION|>\n".to_string(), // Prefix wrapping tool execution outputs.
         tool_suffix: "\n<|END_EXECUTION|>\n".to_string(), // Suffix wrapping tool execution outputs.
+        tool_id_prefix: "".to_string(),            // Prefix wrapping tool IDs.
+        tool_id_suffix: "".to_string(),            // Suffix wrapping tool IDs.
     };
 
     // Step 3: Instantiate the Agent and inject the custom template.

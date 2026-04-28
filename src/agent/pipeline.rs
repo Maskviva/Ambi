@@ -1,7 +1,5 @@
 // src/agent/pipeline.rs
 pub mod chat_runner;
-pub mod rag;
-pub mod react;
 
 use crate::agent::core::{Agent, AgentState};
 use crate::error::Result;

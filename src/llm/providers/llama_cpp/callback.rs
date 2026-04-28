@@ -1,4 +1,4 @@
-// src/llm/providers/llama_cpp/engine/callback.rs
+// src/llm/providers/llama_cpp/callback.rs
 
 use log::{debug, error, info, trace, warn};
 use std::ffi::CStr;

@@ -1,4 +1,4 @@
-// src/llm/providers/llama_cpp/engine/entropy.rs
+// src/llm/providers/llama_cpp/entropy.rs
 
 use super::session::InferenceSession;
 use crate::error::{AmbiError, Result};

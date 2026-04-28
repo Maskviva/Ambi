@@ -49,6 +49,11 @@ For cloud‑only usage (faster compilation, no `llama.cpp` dependency):
 ambi = { version = "0.2", default-features = false, features = ["openai-api"] }
 ```
 
+## Runtime Requirements
+
+Ambi is built on the Tokio async runtime. Ensure your project uses Tokio with `rt-multi-thread` enabled. Without this,
+`Agent::make` and all async methods will not function.
+
 <br>
 
 ## Quick start

@@ -38,6 +38,16 @@ use std::path::Path;
 #[derive(Debug, Deserialize, Clone)]
 pub struct LlamaEngineConfig {
     pub model_path: String,
+
+    /// External vision projector model path (e.g., mmproj-model-f16.gguf).
+    /// Used for decoupled multimodal architectures like LLaVA.
+    pub mmproj_path: Option<String>,
+
+    /// Indicates whether the main LLM has native, integrated vision capabilities
+    /// (e.g., Qwen2-VL, Llama-3.2-Vision), requiring no external mmproj file.
+    #[serde(default)]
+    pub integrated_vision: bool,
+
     pub max_tokens: i32,
     pub buffer_size: usize,
     pub use_gpu: bool,
@@ -63,6 +73,17 @@ impl LlamaEngineConfig {
                 self.model_path
             )));
         }
+
+        // Validate external vision projector if specified
+        if let Some(path) = &self.mmproj_path {
+            if !Path::new(path).exists() {
+                return Err(AmbiError::EngineError(format!(
+                    "Local vision projector (mmproj) file does not exist: {}",
+                    path
+                )));
+            }
+        }
+
         if self.n_ctx == 0 {
             return Err(AmbiError::EngineError(
                 "Context n_ctx cannot be 0.".to_string(),

@@ -5,6 +5,7 @@ use crate::agent::ToolDefinition;
 use crate::llm::ChatTemplate;
 use crate::types::message::Message;
 use crate::types::LLMRequest;
+use crate::ContentPart;
 use std::sync::Arc;
 
 impl Agent {
@@ -18,6 +19,7 @@ impl Agent {
     ) -> LLMRequest {
         let mut final_system_prompt = system_prompt.to_string();
         let mut filtered_history = Vec::new();
+        let mut extracted_images = Vec::new();
 
         for (msg, _exact_tokens) in state.chat_history.all() {
             match &**msg {
@@ -26,6 +28,14 @@ impl Agent {
                         final_system_prompt.push_str("\n\n");
                     }
                     final_system_prompt.push_str(content);
+                }
+                Message::User { content } => {
+                    for part in content {
+                        if let ContentPart::Image { base64 } = part {
+                            extracted_images.push(base64.clone());
+                        }
+                    }
+                    filtered_history.push(Arc::clone(msg));
                 }
                 _ => {
                     filtered_history.push(Arc::clone(msg));
@@ -47,6 +57,7 @@ impl Agent {
             tool_prompt: cached_tool_prompt.to_string(),
             formatted_prompt,
             tool_tags,
+            images: extracted_images,
         }
     }
 
@@ -77,8 +88,16 @@ impl Agent {
                     prompt.push_str(&msg.to_string());
                     prompt.push_str(&tpl.user_suffix);
                 }
-                Message::Tool { content, .. } => {
+                Message::Tool { content, tool_id } => {
                     prompt.push_str(&tpl.tool_prefix);
+
+                    if let Some(id) = tool_id {
+                        if !tpl.tool_id_prefix.is_empty() || !tpl.tool_id_suffix.is_empty() {
+                            prompt.push_str(&tpl.tool_id_prefix);
+                            prompt.push_str(id);
+                            prompt.push_str(&tpl.tool_id_suffix);
+                        }
+                    }
                     prompt.push_str(content);
                     prompt.push_str(&tpl.tool_suffix);
                 }

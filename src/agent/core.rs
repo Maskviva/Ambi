@@ -31,13 +31,13 @@ impl AgentState {
 
 #[derive(Clone)]
 pub struct Agent {
-    pub llm_engine: Arc<LLMEngine>,
-    pub config: AgentConfig,
-    pub tools_def: Arc<Vec<ToolDefinition>>,
-    pub tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
-    pub tool_parser: Arc<dyn ToolCallParser>,
-    pub on_evict_handler: Option<EvictionHandler>,
-    pub cached_tool_prompt: String,
+    pub(crate) llm_engine: Arc<LLMEngine>,
+    pub(crate) config: AgentConfig,
+    pub(crate) tools_def: Arc<Vec<ToolDefinition>>,
+    pub(crate) tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
+    pub(crate) tool_parser: Arc<dyn ToolCallParser>,
+    pub(crate) on_evict_handler: Option<EvictionHandler>,
+    pub(crate) cached_tool_prompt: String,
 }
 
 impl Agent {

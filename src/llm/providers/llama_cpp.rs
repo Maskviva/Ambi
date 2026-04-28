@@ -8,5 +8,6 @@ pub(crate) mod entropy;
 pub(crate) mod inference;
 pub(crate) mod session;
 pub(crate) mod thread;
+mod vision;
 
 pub use engine::LlamaEngine;

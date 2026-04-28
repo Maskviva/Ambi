@@ -1,6 +1,6 @@
 // Import required configuration structs and traits.
 use ambi::llm::ChatTemplateType;
-use ambi::types::config::OpenAIEngineConfig;
+use ambi::types::config::{EvictionStrategy, OpenAIEngineConfig};
 use ambi::{Agent, LLMEngineConfig};
 use anyhow::Result;
 
@@ -21,7 +21,11 @@ async fn main() -> Result<()> {
         .template(ChatTemplateType::Chatml)
         // Step 3: Define the strict eviction strategy to trigger truncation early for testing.
         // Parameters: (keep_head_count, keep_tail_count, max_safe_tokens)
-        .with_eviction_strategy(2, 2, 50)
+        .with_eviction_strategy(EvictionStrategy {
+            keep_head: 2,
+            keep_tail: 2,
+            max_safe_tokens: 50,
+        })
         // Step 4: Inject a closure to handle messages that are evicted from the context window.
         // This is highly useful for archiving old conversations to a Vector Database for long-term RAG memory.
         .on_evict(|evicted_messages| {

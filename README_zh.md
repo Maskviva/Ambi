@@ -42,6 +42,10 @@ ambi = "0.2"
 ambi = { version = "0.2", default-features = false, features = ["openai-api"] }
 ```
 
+## 运行时要求
+
+Ambi 构建在 Tokio 异步运行时上。确保你的项目使用启用 `rt-multi-thread` 的 Tokio。否则，`Agent::make` 和所有异步方法将无法工作。
+
 <br>
 
 ## 快速开始

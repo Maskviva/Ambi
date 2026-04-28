@@ -5,6 +5,7 @@ use crate::agent::core::{Agent, EvictionHandler};
 use crate::agent::tool::ToolDefinition;
 use crate::error::Result;
 use crate::llm::ChatTemplate;
+use crate::types::config::EvictionStrategy;
 use crate::types::message::{ContentPart, Message};
 use crate::types::request::LLMRequest;
 
@@ -80,7 +81,7 @@ impl<'a> StateManager<'a> {
         tool_calls: Vec<(String, serde_json::Value, String)>,
         tokens: usize,
         handler: &Option<EvictionHandler>,
-        eviction_strategy: (usize, usize, usize),
+        eviction_strategy: &EvictionStrategy,
         prompt_overhead: usize,
     ) -> Result<usize> {
         let mut lock = self.0.write().await;
@@ -93,9 +94,9 @@ impl<'a> StateManager<'a> {
         );
 
         let evicted_msgs = lock.chat_history.evict_old_messages(
-            eviction_strategy.0,
-            eviction_strategy.1,
-            eviction_strategy.2,
+            eviction_strategy.keep_head,
+            eviction_strategy.keep_tail,
+            eviction_strategy.max_safe_tokens,
             prompt_overhead,
         );
 

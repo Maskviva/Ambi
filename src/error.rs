@@ -1,7 +1,8 @@
+use std::sync::Arc;
 // src/error.rs
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum AmbiError {
     #[error("LLM Engine Error: {0}")]
     EngineError(String),
@@ -22,7 +23,7 @@ pub enum AmbiError {
     MaxIterationsReached(usize),
 
     #[error(transparent)]
-    Other(#[from] anyhow::Error),
+    Other(#[from] Arc<anyhow::Error>),
 }
 
 pub type Result<T> = std::result::Result<T, AmbiError>;

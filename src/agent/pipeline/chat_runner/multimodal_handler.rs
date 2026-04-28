@@ -5,8 +5,10 @@ use crate::agent::core::{Agent, AgentState, EvictionHandler};
 use crate::agent::tool::{DynTool, StreamFormatter, ToolCallParser, ToolDefinition};
 use crate::error::AmbiError;
 use crate::llm::{ChatTemplate, LLMEngine};
+use crate::types::config::EvictionStrategy;
 use crate::types::message::Message;
 use crate::ContentPart;
+
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -27,7 +29,7 @@ pub(crate) struct LoopConfig<'a> {
     pub template: &'a ChatTemplate,
     pub max_iterations: usize,
     pub system_prompt: &'a str,
-    pub eviction_strategy: (usize, usize, usize),
+    pub eviction_strategy: EvictionStrategy,
     pub enable_formatting: bool,
 }
 
@@ -71,7 +73,7 @@ impl ChatRunner {
                 template: &agent.config.template,
                 max_iterations: agent.config.max_iterations,
                 system_prompt: &agent.config.system_prompt,
-                eviction_strategy: agent.config.eviction_strategy,
+                eviction_strategy: agent.config.eviction_strategy.clone(),
                 enable_formatting: agent.config.enable_formatting,
             },
             loop_tooling: LoopTooling {
@@ -218,7 +220,13 @@ impl ChatRunner {
                     let process_future =
                         Self::process_llm_stream(rx_llm, tx_out, tool_parser, *enable_formatting);
                     let engine_future = engine.chat_stream(req_data, tx_llm);
-                    tokio::join!(engine_future, process_future).1
+                    let (full_output, stream_error) = tokio::join!(engine_future, process_future).1;
+
+                    if let Some(err) = stream_error {
+                        accessor.truncate(snapshot_len).await?;
+                        return Err(err);
+                    }
+                    (full_output, false)
                 }
             };
 
@@ -251,9 +259,8 @@ impl ChatRunner {
             let tokens = engine.count_tokens(&asst_msg.to_string());
 
             let dynamic_system_overhead = accessor.get_system_overhead().await?;
-            let prompt_overhead = (ctx.loop_config.system_prompt.len()
-                + ctx.loop_tooling.cached_tool_prompt.len())
-                / 4
+            let prompt_overhead = engine.count_tokens(ctx.loop_config.system_prompt)
+                + engine.count_tokens(ctx.loop_tooling.cached_tool_prompt)
                 + dynamic_system_overhead;
 
             let evicted_count = accessor
@@ -262,7 +269,7 @@ impl ChatRunner {
                     tool_calls_with_ids.clone(),
                     tokens,
                     ctx.evict_handler,
-                    ctx.loop_config.eviction_strategy,
+                    &ctx.loop_config.eviction_strategy,
                     prompt_overhead,
                 )
                 .await?;

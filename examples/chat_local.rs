@@ -16,6 +16,8 @@ async fn main() -> Result<()> {
     // This requires a local GGUF model file and configures hardware acceleration.
     let engine_config = LLMEngineConfig::Llama(LlamaEngineConfig {
         model_path: "C:/your-dir-path/model.gguf".to_string(), // Absolute path to the local GGUF model file.
+        mmproj_path: None, // Absolute path to the external vision projector model file.
+        integrated_vision: false, // Indicates whether the main LLM has native, integrated vision capabilities.
         max_tokens: 4096, // Maximum number of tokens the model can generate in a single response.
         buffer_size: 32,  // Size of the output buffer for token decoding.
         use_gpu: true,    // Enable GPU acceleration for faster inference.

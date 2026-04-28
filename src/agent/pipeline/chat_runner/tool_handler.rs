@@ -16,6 +16,8 @@ impl ChatRunner {
     ) {
         for (name, args, _tool_msg) in tool_calls {
             if name == "__format_error__" {
+                let err_msg = "\n\n[SYSTEM: Tool call format error - your previous JSON was invalid. Please correct it.]\n\n".to_string();
+                output_buffer.push_str(&err_msg);
                 continue;
             }
             let formatted_tool_block = format!("\n\n[TOOL_CALL]: {}({})\n\n", name, args);
