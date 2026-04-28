@@ -22,6 +22,15 @@ impl ToolManager {
         let mut retries = def.max_retries.unwrap_or(3);
 
         loop {
+            if !def.is_idempotent {
+                return match tool.call_json(args.clone()).await {
+                    Ok(result) => {
+                        serde_json::to_string(&result).map_err(|e| ToolErr(e.to_string()))
+                    }
+                    Err(e) => Err(e),
+                };
+            }
+
             match timeout(timeout_duration, tool.call_json(args.clone())).await {
                 Ok(Ok(result)) => {
                     return serde_json::to_string(&result).map_err(|e| ToolErr(e.to_string()));
@@ -35,17 +44,10 @@ impl ToolManager {
                     return Err(e);
                 }
                 Err(_) => {
-                    if !def.is_idempotent {
-                        return Err(ToolErr(format!(
-                            "Tool '{}' execution timed out ({}s). Not idempotent, aborting immediately.",
-                            name, timeout_duration.as_secs()
-                        )));
-                    }
-
                     retries = retries.saturating_sub(1);
                     if retries == 0 {
                         return Err(ToolErr(format!(
-                            "Tool '{}' execution timed out ({}s)",
+                            "Tool '{}' execution timed out ({}s) after retries",
                             name,
                             timeout_duration.as_secs()
                         )));

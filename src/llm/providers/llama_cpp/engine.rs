@@ -66,10 +66,8 @@ impl Drop for LlamaEngine {
     fn drop(&mut self) {
         // Attempt polite shutdown – ignore errors as the thread may already be dead.
         let _ = self.cmd_tx.send(LlamaCommand::Shutdown);
-        // Wait for the background thread to finish to ensure resources are freed.
-        if let Some(handle) = self._handle.take() {
-            let _ = handle.join();
-        }
+
+        self._handle.take();
     }
 }
 

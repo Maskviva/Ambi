@@ -23,7 +23,7 @@ impl Agent {
     }
 
     pub fn with_custom_engine(custom_backend: Box<dyn LLMEngineTrait>) -> Result<Self> {
-        let engine = LLMEngine::from_custom(custom_backend);
+        let engine = LLMEngine::from_custom(custom_backend)?;
         Ok(Self::init_agent(engine))
     }
 

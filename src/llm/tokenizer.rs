@@ -1,6 +1,6 @@
 // src/llm/tokenizer.rs
 
-use crate::error::Result;
+use crate::error::{AmbiError, Result};
 
 pub trait TokenizerTrait: Send + Sync {
     /// Pure synchronous method, ultra-fast calculation of Token consumption
@@ -13,10 +13,11 @@ pub struct DefaultTokenizer {
 }
 
 impl DefaultTokenizer {
-    pub fn make() -> Self {
-        Self {
-            bpe: tiktoken_rs::cl100k_base().expect("Failed to initialize default tokenizer"),
-        }
+    pub fn make() -> Result<Self> {
+        let bpe = tiktoken_rs::cl100k_base()
+            .map_err(|e| AmbiError::EngineError(format!("Failed to init tokenizer: {}", e)))?;
+
+        Ok(Self { bpe })
     }
 }
 

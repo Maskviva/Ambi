@@ -3,7 +3,7 @@
 use super::{ChatRunner, StateManager};
 use crate::agent::core::{Agent, AgentState, EvictionHandler};
 use crate::agent::tool::{DynTool, StreamFormatter, ToolCallParser, ToolDefinition};
-use crate::error::AmbiError;
+use crate::error::{AmbiError, Result};
 use crate::llm::{ChatTemplate, LLMEngine};
 use crate::types::config::EvictionStrategy;
 use crate::types::message::Message;
@@ -19,7 +19,7 @@ use tokio_stream::wrappers::ReceiverStream;
 pub(crate) enum ExecutionMode<'a> {
     Sync,
     Stream {
-        tx_out: &'a tokio::sync::mpsc::Sender<crate::error::Result<String>>,
+        tx_out: &'a tokio::sync::mpsc::Sender<Result<String>>,
         tool_parser: &'a Arc<dyn ToolCallParser>,
         enable_formatting: bool,
     },
@@ -43,7 +43,7 @@ pub(crate) struct LoopTooling<'a> {
 pub(crate) struct RunCtx<'a> {
     pub loop_config: LoopConfig<'a>,
     pub loop_tooling: LoopTooling<'a>,
-    pub tx_out: Option<&'a tokio::sync::mpsc::Sender<crate::error::Result<String>>>,
+    pub tx_out: Option<&'a tokio::sync::mpsc::Sender<Result<String>>>,
     pub evict_handler: &'a Option<EvictionHandler>,
 }
 
@@ -52,7 +52,7 @@ impl ChatRunner {
         agent: &Agent,
         state: &Arc<RwLock<AgentState>>,
         parts: Vec<ContentPart>,
-    ) -> crate::error::Result<String> {
+    ) -> Result<String> {
         let has_image = parts.iter().any(|p| matches!(p, ContentPart::Image { .. }));
         if has_image && !agent.llm_engine.supports_multimodal() {
             return Err(AmbiError::EngineError(
@@ -63,7 +63,7 @@ impl ChatRunner {
         let user_msg = Message::User {
             content: parts.clone(),
         };
-        let tokens = agent.llm_engine.count_tokens(&user_msg.to_string());
+        let tokens = agent.llm_engine.count_tokens(&user_msg.to_string())?;
 
         let accessor = StateManager(state);
         accessor.push_user_message(parts, tokens).await?;
@@ -93,7 +93,7 @@ impl ChatRunner {
         agent: &Agent,
         state: &Arc<RwLock<AgentState>>,
         parts: Vec<ContentPart>,
-    ) -> crate::error::Result<Pin<Box<ReceiverStream<crate::error::Result<String>>>>> {
+    ) -> Result<Pin<Box<ReceiverStream<Result<String>>>>> {
         let has_image = parts.iter().any(|p| matches!(p, ContentPart::Image { .. }));
         if has_image && !agent.llm_engine.supports_multimodal() {
             return Err(AmbiError::EngineError(
@@ -101,20 +101,21 @@ impl ChatRunner {
             ));
         }
 
-        let (tx_out, rx_out) = channel::<crate::error::Result<String>>(1024);
+        let (tx_out, rx_out) = channel::<Result<String>>(1024);
 
         let tx_out_for_panic = tx_out.clone();
 
         let agent_clone = agent.clone();
         let state_clone = Arc::clone(state);
 
+        let user_msg = Message::User {
+            content: parts.clone(),
+        };
+        let tokens = agent_clone.llm_engine.count_tokens(&user_msg.to_string())?;
+
         let handle = tokio::spawn(async move {
             let tx_out_clone = tx_out.clone();
 
-            let user_msg = Message::User {
-                content: parts.clone(),
-            };
-            let tokens = agent_clone.llm_engine.count_tokens(&user_msg.to_string());
             let accessor = StateManager(&state_clone);
 
             if let Err(e) = accessor.push_user_message(parts, tokens).await {
@@ -172,7 +173,7 @@ impl ChatRunner {
         engine: &LLMEngine,
         accessor: &StateManager<'_>,
         mode: ExecutionMode<'_>,
-    ) -> crate::error::Result<String> {
+    ) -> Result<String> {
         let mut final_formatted_output = if ctx.tx_out.is_none() {
             String::with_capacity(2048)
         } else {
@@ -216,7 +217,7 @@ impl ChatRunner {
                     tool_parser,
                     enable_formatting,
                 } => {
-                    let (tx_llm, rx_llm) = channel::<crate::error::Result<String>>(1024);
+                    let (tx_llm, rx_llm) = channel::<Result<String>>(1024);
                     let process_future =
                         Self::process_llm_stream(rx_llm, tx_out, tool_parser, *enable_formatting);
                     let engine_future = engine.chat_stream(req_data, tx_llm);
@@ -256,11 +257,11 @@ impl ChatRunner {
                 content: full_output.clone(),
                 tool_calls: tool_calls_with_ids.clone(),
             };
-            let tokens = engine.count_tokens(&asst_msg.to_string());
+            let tokens = engine.count_tokens(&asst_msg.to_string())?;
 
             let dynamic_system_overhead = accessor.get_system_overhead().await?;
-            let prompt_overhead = engine.count_tokens(ctx.loop_config.system_prompt)
-                + engine.count_tokens(ctx.loop_tooling.cached_tool_prompt)
+            let prompt_overhead = engine.count_tokens(ctx.loop_config.system_prompt)?
+                + engine.count_tokens(ctx.loop_tooling.cached_tool_prompt)?
                 + dynamic_system_overhead;
 
             let evicted_count = accessor

@@ -45,6 +45,18 @@ pub trait Tool: Send + Sync {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, ToolErr>;
 }
 
+/// # Cancellation Safety
+///
+/// The framework will automatically apply a timeout control to `Tool` (using `tokio::time::timeout`).
+/// This means the Future returned by the `call` method may be dropped at any `.await` point.
+///
+/// 1. If your Tool is non-idempotent (such as payment or placing an order),
+///    please ensure that your internal logic is **cancel-safe**.
+///    It is recommended that non-idempotent tools internally manage timeout logic in a self-contained manner,
+///    set the tool's defined `is_idempotent` to `false`, and set `timeout_secs` to a sufficiently
+///    long duration to prevent being prematurely cut off by the framework.
+///
+/// 2. Avoid leaking `tokio::task::spawn_blocking` in tools, unless you know how to safely stop background threads.
 #[async_trait]
 pub trait DynTool: Send + Sync {
     fn name(&self) -> String;

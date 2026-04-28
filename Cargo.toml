@@ -1,6 +1,6 @@
 [package]
 name = "ambi"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 description = "A flexible, multi-backend, customizable AI agent framework, entirely based on Rust."
 license = "Apache-2.0"

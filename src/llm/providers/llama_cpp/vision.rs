@@ -15,9 +15,6 @@ pub(crate) enum VisionContext {
     Integrated,
 }
 
-unsafe impl Send for VisionContext {}
-unsafe impl Sync for VisionContext {}
-
 impl VisionContext {
     pub fn init(
         mmproj_path: Option<&String>,
@@ -35,8 +32,10 @@ impl VisionContext {
 
             #[cfg(feature = "mtmd")]
             {
-                let mut mtmd_params = MtmdContextParams::default();
-                mtmd_params.print_timings = false;
+                let mtmd_params = MtmdContextParams {
+                    print_timings: false,
+                    ..Default::default()
+                };
 
                 let mtmd_ctx =
                     MtmdContext::init_from_file(path, model, &mtmd_params).map_err(|e| {

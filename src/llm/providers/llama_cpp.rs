@@ -1,5 +1,3 @@
-#![cfg(feature = "llama-cpp")]
-
 pub(crate) mod callback;
 pub(crate) mod command;
 pub(crate) mod dispatch;

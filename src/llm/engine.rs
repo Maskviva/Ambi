@@ -49,7 +49,7 @@ impl LLMEngine {
                 })?;
                 Ok(LLMEngine {
                     backend: Box::new(engine),
-                    tokenizer: Arc::new(DefaultTokenizer::make()),
+                    tokenizer: Arc::new(DefaultTokenizer::make()?),
                 })
             }
             #[cfg(feature = "openai-api")]
@@ -61,17 +61,17 @@ impl LLMEngine {
                 })?;
                 Ok(LLMEngine {
                     backend: Box::new(engine),
-                    tokenizer: Arc::new(DefaultTokenizer::make()),
+                    tokenizer: Arc::new(DefaultTokenizer::make()?),
                 })
             }
         }
     }
 
-    pub fn from_custom(backend: Box<dyn LLMEngineTrait>) -> Self {
-        Self {
+    pub fn from_custom(backend: Box<dyn LLMEngineTrait>) -> Result<Self> {
+        Ok(Self {
             backend,
-            tokenizer: Arc::new(DefaultTokenizer::make()),
-        }
+            tokenizer: Arc::new(DefaultTokenizer::make()?),
+        })
     }
 
     pub fn with_custom_tokenizer<T: TokenizerTrait + 'static>(mut self, tokenizer: T) -> Self {
@@ -92,8 +92,8 @@ impl LLMEngine {
         self.backend.evaluate_sentence_entropy(sentence).await
     }
 
-    pub fn count_tokens(&self, text: &str) -> usize {
-        self.tokenizer.count_tokens(text).unwrap_or(0)
+    pub fn count_tokens(&self, text: &str) -> Result<usize> {
+        self.tokenizer.count_tokens(text)
     }
 
     pub fn supports_multimodal(&self) -> bool {

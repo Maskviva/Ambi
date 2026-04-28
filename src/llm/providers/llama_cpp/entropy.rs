@@ -19,7 +19,7 @@ impl InferenceSession {
         sentence: &str,
         model: &LlamaModel,
         context: &mut LlamaContext,
-        mut batch: &mut LlamaBatch,
+        batch: &mut LlamaBatch,
         session: &mut InferenceSession,
     ) -> Result<f32> {
         let tokens = model
@@ -31,6 +31,9 @@ impl InferenceSession {
             return Ok(0.0);
         }
 
+        let snapshot = session.snapshot();
+        let start_pos = session.pos;
+
         batch.clear();
         for (i, &t) in tokens.iter().enumerate() {
             batch
@@ -39,7 +42,7 @@ impl InferenceSession {
         }
 
         context
-            .decode(&mut batch)
+            .decode(batch)
             .map_err(|e| AmbiError::EngineError(format!("Decoding failed: {}", e)))?;
 
         let mut total_entropy = 0.0_f32;
@@ -48,7 +51,14 @@ impl InferenceSession {
             total_entropy += Self::token_entropy(logits);
         }
 
-        session.pos += tokens.len() as i32;
+        session.restore(snapshot);
+
+        let end_pos = start_pos + tokens.len() as i32;
+        if let Err(e) =
+            context.clear_kv_cache_seq(Some(0), Some(start_pos as u32), Some(end_pos as u32))
+        {
+            log::warn!("Failed to clear KV cache after entropy evaluation: {}", e);
+        }
 
         Ok(total_entropy / tokens.len() as f32)
     }

@@ -48,7 +48,8 @@ impl ChatRunner {
                             "raw_input": raw,
                             "suggestion": "Please ensure your output strictly follows valid JSON syntax without trailing commas or unescaped quotes."
                         });
-                        return (name, args.to_string(), err_json.to_string(), id);
+
+                        return Ok((name, args.to_string(), err_json.to_string(), id));
                     }
 
                     let run_future = ToolManager::run_tool(&t_map, name.clone(), &args);
@@ -62,7 +63,7 @@ impl ChatRunner {
                                     "message": e.to_string()
                                 }).to_string()
                             });
-                            (name, args.to_string(), msg, id)
+                            Ok((name, args.to_string(), msg, id))
                         }
                         _ = async {
                             if let Some(tx) = tx_clone {
@@ -72,32 +73,30 @@ impl ChatRunner {
                             }
                         } => {
                             log::error!("Client disconnected. Aborting ghost tool execution: {}", name);
-                            (name, args.to_string(), "CRITICAL ERROR: Client disconnected".to_string(), id)
+                            Err(AmbiError::AgentError(
+                                "Client disconnected during tool execution".to_string(),
+                            ))
                         }
                     }
                 }
             })
             .buffered(5);
 
-        while let Some((name, args_str, msg, id)) = stream.next().await {
-            if msg.contains("CRITICAL ERROR: Client disconnected") {
-                return Err(AmbiError::AgentError(
-                    "Client disconnected during tool execution".to_string(),
-                ));
-            }
+        while let Some(res) = stream.next().await {
+            let (name, args_str, msg, id) = res?;
 
             let tool_msg = Message::Tool {
                 content: msg.clone(),
                 tool_id: Some(id.clone()),
             };
-            let tokens = engine.count_tokens(&tool_msg.to_string());
+
+            let tokens = engine.count_tokens(&tool_msg.to_string())?;
 
             state_accessor
                 .push_tool_message(msg.clone(), Some(id), tokens)
                 .await?;
             results.push((name, args_str, msg));
         }
-
         Ok(results)
     }
 }
