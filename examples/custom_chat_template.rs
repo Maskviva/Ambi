@@ -1,6 +1,6 @@
 // Import the necessary configuration structs and the ChatTemplate types.
-use ambi::llm::ChatTemplate;
-use ambi::types::config::OpenAIEngineConfig;
+use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
+use ambi::types::ChatTemplate;
 use ambi::{Agent, LLMEngineConfig};
 use anyhow::Result;
 
@@ -25,10 +25,13 @@ async fn main() -> Result<()> {
         user_suffix: "\n".to_string(),                // Suffix added after every user message.
         assistant_prefix: "<|BOT|>: ".to_string(), // Prefix indicating the assistant's turn to generate.
         assistant_suffix: "<|EOT|>\n".to_string(), // Suffix marking the end of the assistant's response.
+        think_prefix: "".to_string(),              // Prefix indicating the assistant's thinking.
+        think_suffix: "".to_string(), // Suffix marking the end of the assistant's thinking.
         tool_prefix: "<|TOOL_EXECUTION|>\n".to_string(), // Prefix wrapping tool execution outputs.
         tool_suffix: "\n<|END_EXECUTION|>\n".to_string(), // Suffix wrapping tool execution outputs.
-        tool_id_prefix: "".to_string(),            // Prefix wrapping tool IDs.
-        tool_id_suffix: "".to_string(),            // Suffix wrapping tool IDs.
+        tool_id_prefix: "".to_string(), // Prefix wrapping tool IDs.
+        tool_id_suffix: "".to_string(), // Suffix wrapping tool IDs.
+        media_placeholder: "".to_string(), // Placeholder for media content.
     };
 
     // Step 3: Instantiate the Agent and inject the custom template.

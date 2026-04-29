@@ -1,10 +1,10 @@
 // src/llm/providers/llama_cpp/engine.rs
 
+use super::command::LlamaCommand;
+use super::config::LlamaEngineConfig;
+use super::thread;
 use crate::error::Result;
-use crate::llm::providers::llama_cpp::command::LlamaCommand;
-use crate::llm::providers::llama_cpp::thread;
 use crate::llm::LLMEngineTrait;
-use crate::types::config::LlamaEngineConfig;
 use crate::types::LLMRequest;
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -57,6 +57,7 @@ impl LlamaEngine {
         })
     }
 
+    /// Checks if the Llama.cpp engine process is still alive.
     pub fn is_alive(&self) -> bool {
         self.alive.load(Ordering::SeqCst)
     }

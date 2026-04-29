@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
     });
 
     // Step 5: Mount your custom engine to the Agent using `Agent::with_custom_engine`.
-    let mut _agent = Agent::with_custom_engine(my_engine)?.preamble(system_prompt);
+    let _agent = Agent::with_custom_engine(my_engine)?.preamble(system_prompt);
 
     // The agent is now fully functional and backed by your proprietary model engine.
     Ok(())

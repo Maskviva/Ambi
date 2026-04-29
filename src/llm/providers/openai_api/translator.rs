@@ -2,8 +2,7 @@
 
 use super::OpenAIEngine;
 use crate::error::{AmbiError, Result};
-use crate::types::message::Message;
-use crate::types::LLMRequest;
+use crate::types::{LLMRequest, Message};
 use crate::ContentPart;
 use async_openai::types::chat::{
     ChatCompletionMessageToolCalls, ChatCompletionRequestAssistantMessageArgs,

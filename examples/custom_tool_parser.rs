@@ -1,6 +1,5 @@
-// Import traits for parsing tool calls and formatting output streams.
-use ambi::agent::tool::{StreamFormatter, ToolCallParser};
-use ambi::types::config::OpenAIEngineConfig;
+use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
+use ambi::types::ToolCallParser;
 use ambi::{Agent, LLMEngineConfig};
 use anyhow::Result;
 use serde_json::Value;
@@ -61,12 +60,6 @@ impl ToolCallParser for XmlToolParser {
         }
         calls
     }
-
-    // Provide a stream formatter.
-    // Here we use the default pass-through formatter which prints everything as is.
-    fn create_stream_formatter(&self) -> Box<dyn StreamFormatter> {
-        Box::new(ambi::agent::core::formatter::PassThroughFormatter)
-    }
 }
 
 #[tokio::main]
@@ -82,7 +75,7 @@ async fn main() -> Result<()> {
 
     // Step 4: Instantiate the Agent and inject the custom tool parser using `.with_tool_parser()`.
     // The framework will now instruct the LLM to output XML and parse it accordingly.
-    let mut _agent = Agent::make(engine_config)
+    let _agent = Agent::make(engine_config)
         .await?
         .with_tool_parser(XmlToolParser);
 

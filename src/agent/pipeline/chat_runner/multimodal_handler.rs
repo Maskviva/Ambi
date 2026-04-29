@@ -1,27 +1,26 @@
 // src/agent/pipeline/chat_runner/multimodal_handler.rs
 
 use super::{ChatRunner, StateManager};
-use crate::agent::core::{Agent, AgentState, EvictionHandler};
-use crate::agent::tool::{DynTool, StreamFormatter, ToolCallParser, ToolDefinition};
+use crate::agent::core::{Agent, AgentState, EvictionHandler, FormatterFactory};
+use crate::config::EvictionStrategy;
 use crate::error::{AmbiError, Result};
-use crate::llm::{ChatTemplate, LLMEngine};
-use crate::types::config::EvictionStrategy;
-use crate::types::message::Message;
+use crate::llm::LLMEngine;
+use crate::types::{ChatTemplate, DynTool, Message, ToolCallParser, ToolDefinition};
 use crate::ContentPart;
 
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::mpsc::channel;
+use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 
+/// # Internal Context Structures
 pub(crate) enum ExecutionMode<'a> {
     Sync,
     Stream {
-        tx_out: &'a tokio::sync::mpsc::Sender<Result<String>>,
-        tool_parser: &'a Arc<dyn ToolCallParser>,
-        enable_formatting: bool,
+        tx_out: &'a Sender<Result<String>>,
+        formatter_factory: &'a FormatterFactory,
     },
 }
 
@@ -30,7 +29,6 @@ pub(crate) struct LoopConfig<'a> {
     pub max_iterations: usize,
     pub system_prompt: &'a str,
     pub eviction_strategy: EvictionStrategy,
-    pub enable_formatting: bool,
 }
 
 pub(crate) struct LoopTooling<'a> {
@@ -38,32 +36,29 @@ pub(crate) struct LoopTooling<'a> {
     pub cached_tool_prompt: &'a str,
     pub tool_map: &'a Arc<HashMap<String, Arc<dyn DynTool>>>,
     pub tool_parser: &'a Arc<dyn ToolCallParser>,
+    pub formatter_factory: &'a FormatterFactory,
 }
 
 pub(crate) struct RunCtx<'a> {
     pub loop_config: LoopConfig<'a>,
     pub loop_tooling: LoopTooling<'a>,
-    pub tx_out: Option<&'a tokio::sync::mpsc::Sender<Result<String>>>,
+    pub tx_out: Option<&'a Sender<Result<String>>>,
     pub evict_handler: &'a Option<EvictionHandler>,
 }
 
+/// # Handler Implementation
 impl ChatRunner {
     pub(crate) async fn chat_multimodal(
         agent: &Agent,
         state: &Arc<RwLock<AgentState>>,
         parts: Vec<ContentPart>,
     ) -> Result<String> {
-        let has_image = parts.iter().any(|p| matches!(p, ContentPart::Image { .. }));
-        if has_image && !agent.llm_engine.supports_multimodal() {
-            return Err(AmbiError::EngineError(
-                "Security Check Failed: The current LLM engine does not support multimodal (image) inputs.".into()
-            ));
-        }
-
-        let user_msg = Message::User {
-            content: parts.clone(),
-        };
-        let tokens = agent.llm_engine.count_tokens(&user_msg.to_string())?;
+        let tokens = agent.llm_engine.count_tokens(
+            &Message::User {
+                content: parts.clone(),
+            }
+            .to_string(),
+        )?;
 
         let accessor = StateManager(state);
         accessor.push_user_message(parts, tokens).await?;
@@ -74,13 +69,13 @@ impl ChatRunner {
                 max_iterations: agent.config.max_iterations,
                 system_prompt: &agent.config.system_prompt,
                 eviction_strategy: agent.config.eviction_strategy.clone(),
-                enable_formatting: agent.config.enable_formatting,
             },
             loop_tooling: LoopTooling {
                 tools_def: &agent.tools_def,
                 cached_tool_prompt: &agent.cached_tool_prompt,
                 tool_map: &agent.tool_map,
                 tool_parser: &agent.tool_parser,
+                formatter_factory: &agent.formatter_factory,
             },
             tx_out: None,
             evict_handler: &agent.on_evict_handler,
@@ -94,28 +89,20 @@ impl ChatRunner {
         state: &Arc<RwLock<AgentState>>,
         parts: Vec<ContentPart>,
     ) -> Result<Pin<Box<ReceiverStream<Result<String>>>>> {
-        let has_image = parts.iter().any(|p| matches!(p, ContentPart::Image { .. }));
-        if has_image && !agent.llm_engine.supports_multimodal() {
-            return Err(AmbiError::EngineError(
-                "Security Check Failed: The current LLM engine does not support multimodal (image) inputs.".into()
-            ));
-        }
-
         let (tx_out, rx_out) = channel::<Result<String>>(1024);
-
         let tx_out_for_panic = tx_out.clone();
-
         let agent_clone = agent.clone();
         let state_clone = Arc::clone(state);
 
-        let user_msg = Message::User {
-            content: parts.clone(),
-        };
-        let tokens = agent_clone.llm_engine.count_tokens(&user_msg.to_string())?;
+        let tokens = agent_clone.llm_engine.count_tokens(
+            &Message::User {
+                content: parts.clone(),
+            }
+            .to_string(),
+        )?;
 
         let handle = tokio::spawn(async move {
             let tx_out_clone = tx_out.clone();
-
             let accessor = StateManager(&state_clone);
 
             if let Err(e) = accessor.push_user_message(parts, tokens).await {
@@ -129,13 +116,13 @@ impl ChatRunner {
                     max_iterations: agent_clone.config.max_iterations,
                     system_prompt: &agent_clone.config.system_prompt,
                     eviction_strategy: agent_clone.config.eviction_strategy,
-                    enable_formatting: agent_clone.config.enable_formatting,
                 },
                 loop_tooling: LoopTooling {
                     tools_def: &agent_clone.tools_def,
                     cached_tool_prompt: &agent_clone.cached_tool_prompt,
                     tool_map: &agent_clone.tool_map,
                     tool_parser: &agent_clone.tool_parser,
+                    formatter_factory: &agent_clone.formatter_factory,
                 },
                 tx_out: Some(&tx_out_clone),
                 evict_handler: &agent_clone.on_evict_handler,
@@ -143,8 +130,7 @@ impl ChatRunner {
 
             let mode = ExecutionMode::Stream {
                 tx_out: &tx_out_clone,
-                tool_parser: &agent_clone.tool_parser,
-                enable_formatting: agent_clone.config.enable_formatting,
+                formatter_factory: &agent_clone.formatter_factory,
             };
 
             if let Err(e) = Self::run_loop(&ctx, &agent_clone.llm_engine, &accessor, mode).await {
@@ -179,6 +165,7 @@ impl ChatRunner {
         } else {
             String::new()
         };
+
         let mut iteration_count = 0;
         let mut snapshot_len = accessor.get_snapshot_len().await?;
 
@@ -214,14 +201,16 @@ impl ChatRunner {
                 },
                 ExecutionMode::Stream {
                     tx_out,
-                    tool_parser,
-                    enable_formatting,
+                    formatter_factory,
                 } => {
                     let (tx_llm, rx_llm) = channel::<Result<String>>(1024);
+
                     let process_future =
-                        Self::process_llm_stream(rx_llm, tx_out, tool_parser, *enable_formatting);
+                        Self::process_llm_stream(rx_llm, tx_out, formatter_factory);
                     let engine_future = engine.chat_stream(req_data, tx_llm);
-                    let (full_output, stream_error) = tokio::join!(engine_future, process_future).1;
+
+                    let ((), (full_output, stream_error)) =
+                        tokio::join!(engine_future, process_future);
 
                     if let Some(err) = stream_error {
                         accessor.truncate(snapshot_len).await?;
@@ -274,14 +263,11 @@ impl ChatRunner {
                     prompt_overhead,
                 )
                 .await?;
+
             snapshot_len = snapshot_len.saturating_sub(evicted_count);
 
             if ctx.tx_out.is_none() {
-                let mut formatter: Box<dyn StreamFormatter> = if ctx.loop_config.enable_formatting {
-                    ctx.loop_tooling.tool_parser.create_stream_formatter()
-                } else {
-                    Box::new(crate::agent::core::formatter::PassThroughFormatter)
-                };
+                let mut formatter = (ctx.loop_tooling.formatter_factory)();
                 final_formatted_output.push_str(&formatter.push(&full_output));
                 final_formatted_output.push_str(&formatter.flush());
             }

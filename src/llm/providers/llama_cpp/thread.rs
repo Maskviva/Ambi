@@ -1,9 +1,10 @@
 // src/llm/providers/llama_cpp/thread.rs
 
-use crate::llm::providers::llama_cpp::command::LlamaCommand;
-use crate::llm::providers::llama_cpp::session::InferenceSession;
-use crate::llm::providers::llama_cpp::vision::VisionContext;
-use crate::types::config::LlamaEngineConfig;
+use super::command::LlamaCommand;
+use super::config::LlamaEngineConfig;
+use super::inference::InferenceInput;
+use super::session::InferenceSession;
+use super::vision::VisionContext;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
@@ -96,14 +97,19 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
     };
 
     // Core Initialization: Delegate vision strategy resolution to VisionContext
-    let vision_ctx = VisionContext::init(cfg.mmproj_path.as_ref(), cfg.integrated_vision, &model)
-        .unwrap_or_else(|e| {
-            error!(
-                "Failed to initialize Vision Context: {}. Multimodal processing disabled.",
-                e
-            );
-            None
-        });
+    let vision_ctx = VisionContext::init(
+        cfg.mmproj_path.as_ref(),
+        cfg.integrated_vision,
+        #[cfg(feature = "mtmd")]
+        &model,
+    )
+    .unwrap_or_else(|e| {
+        error!(
+            "Failed to initialize Vision Context: {}. Multimodal processing disabled.",
+            e
+        );
+        None
+    });
 
     let mut batch = LlamaBatch::new(cfg.n_tokens, cfg.n_seq_max);
     let mut session = InferenceSession::new();
@@ -118,15 +124,20 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
                 reply_tx,
             } => {
                 let mut full_response = String::new();
+
+                let input = InferenceInput {
+                    prompt: &prompt,
+                    images: &images,
+                    vision_ctx: vision_ctx.as_ref(),
+                    cfg: &cfg,
+                };
+
                 let res = InferenceSession::run_inference(
-                    &prompt,
-                    &images,
-                    vision_ctx.as_ref(),
+                    input,
                     &model,
                     &mut context,
                     &mut batch,
                     &mut session,
-                    &cfg,
                     |piece| {
                         full_response.push_str(&piece);
                         true
@@ -140,15 +151,19 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
                 chunk_tx,
                 done_tx,
             } => {
+                let input = InferenceInput {
+                    prompt: &prompt,
+                    images: &images,
+                    vision_ctx: vision_ctx.as_ref(),
+                    cfg: &cfg,
+                };
+
                 let res = InferenceSession::run_inference(
-                    &prompt,
-                    &images,
-                    vision_ctx.as_ref(),
+                    input,
                     &model,
                     &mut context,
                     &mut batch,
                     &mut session,
-                    &cfg,
                     |piece| chunk_tx.blocking_send(Ok(piece)).is_ok(),
                 );
                 if let Err(e) = res {

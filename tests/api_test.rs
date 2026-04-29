@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use ambi::types::config::OpenAIEngineConfig;
+    use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
     use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
     use std::sync::Arc;
     use tokio::sync::RwLock;

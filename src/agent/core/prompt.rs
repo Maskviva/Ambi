@@ -1,10 +1,7 @@
 // src/agent/core/prompt.rs
 
 use super::{Agent, AgentState};
-use crate::agent::ToolDefinition;
-use crate::llm::ChatTemplate;
-use crate::types::message::Message;
-use crate::types::LLMRequest;
+use crate::types::{ChatTemplate, LLMRequest, Message, ToolDefinition};
 use crate::ContentPart;
 use std::sync::Arc;
 
@@ -17,17 +14,18 @@ impl Agent {
         cached_tool_prompt: &str,
         tool_tags: (String, String),
     ) -> LLMRequest {
-        let mut final_system_prompt = system_prompt.to_string();
+        let mut system_prompts_buffer = Vec::new();
         let mut filtered_history = Vec::new();
         let mut extracted_images = Vec::new();
 
-        for (msg, _exact_tokens) in state.chat_history.all() {
+        if !system_prompt.is_empty() {
+            system_prompts_buffer.push(system_prompt.to_string());
+        }
+
+        for (msg, _) in state.chat_history.all() {
             match &**msg {
                 Message::System { content } => {
-                    if !final_system_prompt.is_empty() {
-                        final_system_prompt.push_str("\n\n");
-                    }
-                    final_system_prompt.push_str(content);
+                    system_prompts_buffer.push(content.clone());
                 }
                 Message::User { content } => {
                     for part in content {
@@ -42,6 +40,8 @@ impl Agent {
                 }
             }
         }
+
+        let final_system_prompt = system_prompts_buffer.join("\n\n");
 
         let formatted_prompt = Self::build_prompt(
             &final_system_prompt,
@@ -69,6 +69,7 @@ impl Agent {
     ) -> String {
         let mut prompt = String::with_capacity(2048);
 
+        // --- Render Preamble (System + Tools) ---
         if !system_prompt.is_empty() || !tool_content.is_empty() {
             prompt.push_str(&tpl.system_prefix);
             prompt.push_str(system_prompt);
@@ -81,12 +82,14 @@ impl Agent {
             prompt.push_str(&tpl.system_suffix);
         }
 
+        // --- Render Conversation History ---
         for msg in filtered_history {
             match &**msg {
                 Message::User { content } => {
                     prompt.push_str(&tpl.user_prefix);
                     let mut user_text = String::new();
                     let mut has_image = false;
+
                     for part in content {
                         match part {
                             ContentPart::Text { text } => user_text.push_str(text),
@@ -94,14 +97,14 @@ impl Agent {
                         }
                     }
                     prompt.push_str(&user_text);
-                    if has_image {
-                        prompt.push_str("<__media__>");
+
+                    if has_image && !tpl.media_placeholder.is_empty() {
+                        prompt.push_str(&tpl.media_placeholder);
                     }
                     prompt.push_str(&tpl.user_suffix);
                 }
                 Message::Tool { content, tool_id } => {
                     prompt.push_str(&tpl.tool_prefix);
-
                     if let Some(id) = tool_id {
                         if !tpl.tool_id_prefix.is_empty() || !tpl.tool_id_suffix.is_empty() {
                             prompt.push_str(&tpl.tool_id_prefix);
@@ -117,9 +120,11 @@ impl Agent {
                     prompt.push_str(content);
                     prompt.push_str(&tpl.assistant_suffix);
                 }
-                _ => {}
+                _ => {} // System Message already handled above
             }
         }
+
+        // --- Render Assistant Generation Prompt ---
         prompt.push_str(&tpl.assistant_prefix);
         prompt
     }

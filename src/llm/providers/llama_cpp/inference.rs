@@ -1,9 +1,9 @@
 // src/llm/providers/llama_cpp/inference.rs
 
+use super::config::LlamaEngineConfig;
 use super::session::InferenceSession;
+use super::vision::VisionContext;
 use crate::error::{AmbiError, Result};
-use crate::llm::providers::llama_cpp::vision::VisionContext;
-use crate::types::config::LlamaEngineConfig;
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::{AddBos, LlamaModel};
@@ -13,6 +13,13 @@ use log::{debug, info, warn};
 
 #[cfg(feature = "mtmd")]
 use llama_cpp_2::mtmd::MtmdInputText;
+
+pub(crate) struct InferenceInput<'a> {
+    pub prompt: &'a str,
+    pub images: &'a [String],
+    pub vision_ctx: Option<&'a VisionContext>,
+    pub cfg: &'a LlamaEngineConfig,
+}
 
 impl InferenceSession {
     /// Execute a full completion loop for the given prompt.
@@ -28,50 +35,51 @@ impl InferenceSession {
     /// termination), otherwise an `AmbiError::EngineError` describing the
     /// failure point.
     pub(crate) fn run_inference<F>(
-        prompt: &str,
-        images: &[String],
-        vision_ctx: Option<&VisionContext>,
+        input: InferenceInput<'_>,
         model: &LlamaModel,
         context: &mut LlamaContext,
         batch: &mut LlamaBatch,
         session: &mut InferenceSession,
-        cfg: &LlamaEngineConfig,
         mut callback: F,
     ) -> Result<()>
     where
         F: FnMut(String) -> bool,
     {
-        debug!("\n{}\n========================================", prompt);
+        debug!(
+            "\n{}\n========================================",
+            input.prompt
+        );
 
         let snapshot = session.snapshot();
 
-        let current_tokens = Self::tokenize_prompt(model, prompt)?;
-        Self::validate_prompt_length(&current_tokens, cfg)?;
-        let dynamic_max_tokens = Self::calculate_max_tokens(&current_tokens, cfg)?;
+        let current_tokens = Self::tokenize_prompt(model, input.prompt)?;
+        Self::validate_prompt_length(&current_tokens, input.cfg)?;
+        let dynamic_max_tokens = Self::calculate_max_tokens(&current_tokens, input.cfg)?;
 
-        let match_len = if images.is_empty() {
+        let match_len = if input.images.is_empty() {
             Self::handle_kv_cache(session, context, &current_tokens)
         } else {
             0
         };
 
         // Process image presence (validation / error for unsupported configurations)
-        Self::process_images(images, vision_ctx)?;
+        Self::process_images(input.images, input.vision_ctx)?;
 
         // Multimodal: if we have images AND a valid ExternalProjector (mtmd feature),
         // delegate to dedicated multimodal inference path.
         #[cfg(feature = "mtmd")]
-        if !images.is_empty() && matches!(vision_ctx, Some(VisionContext::ExternalProjector { .. }))
+        if !input.images.is_empty()
+            && matches!(
+                input.vision_ctx,
+                Some(VisionContext::ExternalProjector { .. })
+            )
         {
             return Self::multimodal_inference(
-                prompt,
-                images,
-                vision_ctx,
+                input,
                 model,
                 context,
                 batch,
                 session,
-                cfg,
                 &mut callback,
             );
         }
@@ -80,20 +88,20 @@ impl InferenceSession {
             session,
             context,
             batch,
-            cfg,
+            input.cfg,
             &current_tokens,
             match_len,
             &snapshot,
         )?;
 
-        let mut sampler = Self::create_sampler(cfg);
+        let mut sampler = Self::create_sampler(input.cfg);
 
         Self::generation_loop(
             session,
             model,
             context,
             batch,
-            cfg,
+            input.cfg,
             &mut sampler,
             dynamic_max_tokens,
             &snapshot,
@@ -194,20 +202,11 @@ impl InferenceSession {
                  Set `mmproj_path` or `integrated_vision` in LlamaEngineConfig."
                     .into(),
             )),
+            #[cfg(feature = "mtmd")]
             Some(VisionContext::ExternalProjector { .. }) => {
                 // When mtmd feature is enabled, the actual handling is done
                 // in the caller (run_inference). Here we just allow it.
-                #[cfg(feature = "mtmd")]
-                {
-                    Ok(())
-                }
-                #[cfg(not(feature = "mtmd"))]
-                {
-                    Err(AmbiError::EngineError(
-                        "External projector (mmproj) multimodal support requires the 'mtmd' feature."
-                            .into(),
-                    ))
-                }
+                Ok(())
             }
             Some(VisionContext::Integrated) => Err(AmbiError::EngineError(
                 "Native integrated vision support is not yet implemented. \
@@ -267,6 +266,7 @@ impl InferenceSession {
         ])
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn generation_loop<F>(
         session: &mut InferenceSession,
         model: &LlamaModel,
@@ -333,6 +333,7 @@ impl InferenceSession {
             }
 
             batch.clear();
+
             batch
                 .add(next_token, session.pos, &[0], true)
                 .map_err(|e| {
@@ -365,14 +366,11 @@ impl InferenceSession {
 
     #[cfg(feature = "mtmd")]
     fn multimodal_inference<F>(
-        prompt: &str,
-        images: &[String],
-        vision_ctx: Option<&VisionContext>,
+        input: InferenceInput<'_>,
         model: &LlamaModel,
         context: &mut LlamaContext,
         batch: &mut LlamaBatch,
         session: &mut InferenceSession,
-        cfg: &LlamaEngineConfig,
         callback: &mut F,
     ) -> Result<()>
     where
@@ -387,7 +385,7 @@ impl InferenceSession {
         session.reset();
         context.clear_kv_cache();
 
-        let mtmd_ctx = match vision_ctx {
+        let mtmd_ctx = match input.vision_ctx {
             Some(VisionContext::ExternalProjector { mtmd_ctx }) => mtmd_ctx,
             _ => {
                 return Err(AmbiError::EngineError(
@@ -396,11 +394,11 @@ impl InferenceSession {
             }
         };
 
-        let bitmaps = vision_ctx.unwrap().create_bitmaps(images)?;
+        let bitmaps = input.vision_ctx.unwrap().create_bitmaps(input.images)?;
         let bitmap_refs: Vec<_> = bitmaps.iter().collect();
 
         let text_input = MtmdInputText {
-            text: prompt.to_string(),
+            text: input.prompt.to_string(),
             add_special: true,
             parse_special: true,
         };
@@ -428,9 +426,9 @@ impl InferenceSession {
                 mtmd_ctx,
                 context,
                 n_past,
-                0,                   // seq_id
-                cfg.n_tokens as i32, // n_batch
-                true,                // logits_last
+                0,                         // seq_id
+                input.cfg.n_tokens as i32, // n_batch
+                true,                      // logits_last
             )
             .map_err(|e| AmbiError::EngineError(format!("MTMD eval error: {}", e)))?;
 
@@ -439,15 +437,15 @@ impl InferenceSession {
         session.pos = new_n_past;
 
         // Now continue with normal generation
-        let mut sampler = Self::create_sampler(cfg);
-        let dynamic_max_tokens = Self::calculate_max_tokens(&session.history_tokens, cfg)?;
+        let mut sampler = Self::create_sampler(input.cfg);
+        let dynamic_max_tokens = Self::calculate_max_tokens(&session.history_tokens, input.cfg)?;
 
         Self::generation_loop(
             session,
             model,
             context,
             batch,
-            cfg,
+            input.cfg,
             &mut sampler,
             dynamic_max_tokens,
             &snapshot,

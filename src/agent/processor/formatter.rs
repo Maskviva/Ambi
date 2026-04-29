@@ -1,5 +1,8 @@
-use crate::agent::tool::StreamFormatter;
+// src/agent/core/formatter.rs
 
+use crate::types::StreamFormatter;
+
+/// A passthrough formatter that performs zero modifications to the text.
 pub struct PassThroughFormatter;
 impl StreamFormatter for PassThroughFormatter {
     fn push(&mut self, token: &str) -> String {
@@ -10,71 +13,59 @@ impl StreamFormatter for PassThroughFormatter {
     }
 }
 
-/// A stream formatter that intelligently parses and filters output tokens in real-time.
-///
-/// `TagStreamFormatter` is primarily used to intercept and hide internal model reasoning
-/// (such as `<think>` blocks) and tool invocation tags (like `[TOOL_CALL]`) from the final
-/// user-facing output stream. It maintains an internal buffer to handle tokens that are
-/// split across network chunks.
-///
-/// # Examples
-///
-/// ```rust
-/// use ambi::agent::core::formatter::TagStreamFormatter;
-/// use ambi::agent::tool::StreamFormatter;
-///
-/// let mut formatter = TagStreamFormatter::new("[TOOL_CALL]", "[/TOOL_CALL]")
-///     .set_max_buffer_size(8192);
-///
-/// // First push: Detected plain text, automatically output with [Content]: prefix.
-/// // But because the end contains part of the tag "[TOOL", the main text was retained in the buffer waiting for closure.
-/// let output1 = formatter.push("Here is the tool: [TOOL");
-/// assert_eq!(output1, "[Content]: ");
-///
-/// // Second push: Tag closed, tool content hidden.
-/// // Previously intercepted 'Here is the tool: ' has been safely released.
-/// let output2 = formatter.push("_CALL]{\"name\":\"get_time\"}[/TOOL_CALL]");
-/// assert_eq!(output2, "Here is the tool: ");
-///
-/// // Third push: ordinary text is passed through directly.
-/// let output3 = formatter.push("Done.");
-/// assert_eq!(output3, "Done.");
-/// ```
-pub struct TagStreamFormatter {
+/// The framework's default standard stream formatter.
+pub struct StandardStreamFormatter {
     buffer: String,
     in_tool_call: bool,
     started: bool,
-    start_tag: String,
-    end_tag: String,
+
+    tool_start_tag: String,
+    tool_end_tag: String,
+
+    think_start_tag: String,
+    think_end_tag: String,
+
     max_buffer_size: usize,
 }
 
-impl TagStreamFormatter {
-    pub fn new(start_tag: &str, end_tag: &str) -> Self {
+impl StandardStreamFormatter {
+    /// Initializes the formatter with tags to intercept and hide.
+    pub fn new(tool_start: &str, tool_end: &str, think_start: &str, think_end: &str) -> Self {
         Self {
             buffer: String::new(),
             in_tool_call: false,
             started: false,
-            start_tag: start_tag.to_string(),
-            end_tag: end_tag.to_string(),
+            tool_start_tag: tool_start.to_string(),
+            tool_end_tag: tool_end.to_string(),
+
+            think_start_tag: if think_start.is_empty() {
+                "<think>".to_string()
+            } else {
+                think_start.to_string()
+            },
+            think_end_tag: if think_end.is_empty() {
+                "</think>".to_string()
+            } else {
+                think_end.to_string()
+            },
             max_buffer_size: 8192,
         }
     }
 
+    /// Defines a maximum buffer limit to prevent Out-Of-Memory exploits on stream chunks.
     pub fn set_max_buffer_size(mut self, max_buffer_size: usize) -> Self {
         self.max_buffer_size = max_buffer_size;
         self
     }
 
     fn process_text(&self, text: &str) -> String {
-        text.replace("</think>", "\n\n[Content]: ")
-    }
-    fn ends_with_partial_tag(&self, text: &str, tag: &str) -> bool {
-        self.suffix_matches_tag_prefix(text, tag)
+        text.replace(&self.think_end_tag, "\n\n[Content]: ")
     }
 
     fn suffix_matches_tag_prefix(&self, text: &str, tag: &str) -> bool {
-        // Check one by one whether the shortest prefix of the tag (length 1) to the full length matches the suffix of the text
+        if tag.is_empty() {
+            return false;
+        }
         for len in 1..=tag.len() {
             let prefix = &tag[..len];
             if text.ends_with(prefix) {
@@ -85,7 +76,7 @@ impl TagStreamFormatter {
     }
 }
 
-impl StreamFormatter for TagStreamFormatter {
+impl StreamFormatter for StandardStreamFormatter {
     fn push(&mut self, token: &str) -> String {
         self.buffer.push_str(token);
 
@@ -106,18 +97,18 @@ impl StreamFormatter for TagStreamFormatter {
         loop {
             if !self.started {
                 let trimmed = self.buffer.trim_start();
-                if let Some(idx) = self.buffer.find("<think>") {
+                if let Some(idx) = self.buffer.find(&self.think_start_tag) {
                     let before = &self.buffer[..idx];
                     output.push_str(before);
                     output.push_str("[Thinking]:\n");
-                    self.buffer = self.buffer[idx + 7..].to_string();
+                    self.buffer = self.buffer[idx + self.think_start_tag.len()..].to_string();
                     self.started = true;
                     continue;
-                } else if self.buffer.contains(&self.start_tag) {
+                } else if self.buffer.contains(&self.tool_start_tag) {
                     self.started = true;
-                } else if self.suffix_matches_tag_prefix(&self.buffer, "<think>") {
+                } else if self.suffix_matches_tag_prefix(&self.buffer, &self.think_start_tag) {
                     break;
-                } else if self.suffix_matches_tag_prefix(&self.buffer, &self.start_tag) {
+                } else if self.suffix_matches_tag_prefix(&self.buffer, &self.tool_start_tag) {
                     if !trimmed.is_empty() {
                         output.push_str("[Content]: ");
                         self.started = true;
@@ -132,23 +123,23 @@ impl StreamFormatter for TagStreamFormatter {
             }
 
             if self.in_tool_call {
-                if let Some(end_idx) = self.buffer.find(&self.end_tag) {
-                    self.buffer = self.buffer[end_idx + self.end_tag.len()..].to_string();
+                if let Some(end_idx) = self.buffer.find(&self.tool_end_tag) {
+                    self.buffer = self.buffer[end_idx + self.tool_end_tag.len()..].to_string();
                     self.in_tool_call = false;
                     continue;
                 }
                 break;
             } else {
-                if let Some(start_idx) = self.buffer.find(&self.start_tag) {
+                if let Some(start_idx) = self.buffer.find(&self.tool_start_tag) {
                     let before = self.buffer[..start_idx].to_string();
                     output.push_str(&self.process_text(&before));
-                    self.buffer = self.buffer[start_idx + self.start_tag.len()..].to_string();
+                    self.buffer = self.buffer[start_idx + self.tool_start_tag.len()..].to_string();
                     self.in_tool_call = true;
                     continue;
                 }
-                if self.ends_with_partial_tag(&self.buffer, &self.start_tag)
-                    || self.ends_with_partial_tag(&self.buffer, "</think>")
-                    || self.ends_with_partial_tag(&self.buffer, "<think>")
+                if self.suffix_matches_tag_prefix(&self.buffer, &self.tool_start_tag)
+                    || self.suffix_matches_tag_prefix(&self.buffer, &self.think_end_tag)
+                    || self.suffix_matches_tag_prefix(&self.buffer, &self.think_start_tag)
                 {
                     break;
                 }

@@ -1,9 +1,11 @@
 // src/llm/providers/openai/mod.rs
+pub mod config;
+/// Request/response translators for OpenAI API compatibility.
 pub mod translator;
 
+use self::config::OpenAIEngineConfig;
 use crate::error::{AmbiError, Result};
 use crate::llm::LLMEngineTrait;
-use crate::types::config::OpenAIEngineConfig;
 use crate::types::LLMRequest;
 use async_openai::config::OpenAIConfig;
 use async_openai::types::chat::ChatCompletionMessageToolCallChunk;
@@ -14,6 +16,9 @@ use log::debug;
 use std::collections::BTreeMap;
 use tokio::sync::mpsc::Sender;
 
+/// The OpenAI API engine implementation.
+///
+/// Wraps the async-openai client and provides integration with the Ambi framework.
 #[derive(Clone)]
 pub struct OpenAIEngine {
     client: Client<OpenAIConfig>,
@@ -21,6 +26,7 @@ pub struct OpenAIEngine {
 }
 
 impl OpenAIEngine {
+    /// Loads and initializes an OpenAI engine with the given configuration.
     pub fn load(openai_cfg: OpenAIEngineConfig) -> Result<Self> {
         let mut config = OpenAIConfig::new().with_api_key(openai_cfg.api_key.clone());
         config = config.with_api_base(&openai_cfg.base_url);
@@ -32,6 +38,7 @@ impl OpenAIEngine {
         })
     }
 
+    /// Generates a synchronous response from the OpenAI API.
     pub async fn generate_response_sync(&self, request: LLMRequest) -> Result<String> {
         let tool_tags = request.tool_tags.clone();
         let api_request = self.get_request(self.cfg.model_name.clone(), request, false)?;
@@ -75,6 +82,7 @@ impl OpenAIEngine {
         Ok(choice.message.content.unwrap_or_default())
     }
 
+    /// Generates a streaming response from the OpenAI API.
     pub async fn generate_response_stream(
         &self,
         request: LLMRequest,

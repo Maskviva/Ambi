@@ -1,16 +1,12 @@
+// src/llm.rs
+
+//! Large Language Model abstractions and provider implementations.
+
+/// Core engine abstractions and wrapper implementations.
 pub mod engine;
+/// Concrete backend implementations (OpenAI API, Llama.cpp, etc.).
 pub mod providers;
-pub mod template;
-mod tokenizer;
+/// Tokenization algorithms for context management.
+pub mod tokenizer;
 
-use crate::types::config;
-
-pub use engine::{LLMEngine, LLMEngineTrait};
-pub use template::{ChatTemplate, ChatTemplateType};
-
-pub enum LLMEngineConfig {
-    #[cfg(feature = "openai-api")]
-    OpenAI(config::OpenAIEngineConfig),
-    #[cfg(feature = "llama-cpp")]
-    Llama(config::LlamaEngineConfig),
-}
+pub use engine::{LLMEngine, LLMEngineConfig, LLMEngineTrait};

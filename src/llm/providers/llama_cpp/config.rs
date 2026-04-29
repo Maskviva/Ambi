@@ -1,4 +1,6 @@
-#![cfg(feature = "llama-cpp")]
+// src/llm/providers/llama_cpp/config.rs
+
+//! Configuration properties for local Llama.cpp inference.
 
 use crate::error::AmbiError;
 use serde::Deserialize;
@@ -37,35 +39,51 @@ use std::path::Path;
 ///
 #[derive(Debug, Deserialize, Clone)]
 pub struct LlamaEngineConfig {
+    /// The file path to the local `.gguf` model weight.
     pub model_path: String,
 
     /// External vision projector model path (e.g., mmproj-model-f16.gguf).
     /// Used for decoupled multimodal architectures like LLaVA.
     pub mmproj_path: Option<String>,
 
-    /// Indicates whether the main LLM has native, integrated vision capabilities
-    /// (e.g., Qwen2-VL, Llama-3.2-Vision), requiring no external mmproj file.
+    /// Indicates whether the main LLM has native, integrated vision capabilities.
     #[serde(default)]
     pub integrated_vision: bool,
 
+    /// The maximum number of tokens to predict.
     pub max_tokens: i32,
+    /// Batch buffer size for piece decoding.
     pub buffer_size: usize,
+    /// Whether to offload layers to the GPU.
     pub use_gpu: bool,
+    /// Number of layers to offload to the GPU.
     pub n_gpu_layers: u32,
+    /// The length of the context window.
     pub n_ctx: u32,
+    /// Batch size for prompt processing.
     pub n_tokens: usize,
+    /// Maximum sequences allowed in a batch.
     pub n_seq_max: i32,
+    /// Number of past tokens to consider for penalties.
     pub penalty_last_n: i32,
+    /// Repetition penalty factor.
     pub penalty_repeat: f32,
+    /// Frequency penalty factor.
     pub penalty_freq: f32,
+    /// Presence penalty factor.
     pub penalty_present: f32,
+    /// The sampling temperature (0.0 to 2.0).
     pub temp: f32,
+    /// The top-p (nucleus) sampling threshold.
     pub top_p: f32,
+    /// The RNG seed for deterministic generation.
     pub seed: u32,
+    /// Min-keep sampling boundary.
     pub min_keep: usize,
 }
 
 impl LlamaEngineConfig {
+    /// Validates the file paths and parameter bounds before initialization.
     pub fn validate(&self) -> crate::error::Result<()> {
         if !Path::new(&self.model_path).exists() {
             return Err(AmbiError::EngineError(format!(

@@ -1,5 +1,6 @@
 pub(crate) mod callback;
 pub(crate) mod command;
+pub mod config;
 pub(crate) mod dispatch;
 pub(crate) mod engine;
 pub(crate) mod entropy;

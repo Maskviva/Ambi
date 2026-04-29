@@ -2,12 +2,9 @@
 
 use super::StateManager;
 use crate::agent::core::{Agent, EvictionHandler};
-use crate::agent::tool::ToolDefinition;
+use crate::config::EvictionStrategy;
 use crate::error::Result;
-use crate::llm::ChatTemplate;
-use crate::types::config::EvictionStrategy;
-use crate::types::message::{ContentPart, Message};
-use crate::types::request::LLMRequest;
+use crate::types::{ChatTemplate, ContentPart, LLMRequest, Message, ToolDefinition};
 
 impl<'a> StateManager<'a> {
     pub async fn push_user_message(&self, parts: Vec<ContentPart>, tokens: usize) -> Result<()> {
@@ -93,12 +90,9 @@ impl<'a> StateManager<'a> {
             tokens,
         );
 
-        let evicted_msgs = lock.chat_history.evict_old_messages(
-            eviction_strategy.keep_head,
-            eviction_strategy.keep_tail,
-            eviction_strategy.max_safe_tokens,
-            prompt_overhead,
-        );
+        let evicted_msgs = lock
+            .chat_history
+            .evict_old_messages(eviction_strategy.max_safe_tokens, prompt_overhead);
 
         let count = evicted_msgs.len();
         if count > 0 {

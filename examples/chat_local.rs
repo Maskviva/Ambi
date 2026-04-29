@@ -1,6 +1,6 @@
 // Import necessary configurations and traits for the local Llama engine.
-use ambi::llm::ChatTemplateType;
-use ambi::types::config::LlamaEngineConfig;
+use ambi::llm::providers::llama_cpp::config::LlamaEngineConfig;
+use ambi::types::ChatTemplateType;
 use ambi::{Agent, AgentState};
 use ambi::{ChatRunner, LLMEngineConfig};
 use anyhow::Result;

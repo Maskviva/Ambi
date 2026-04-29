@@ -1,15 +1,18 @@
 // src/agent/pipeline/chat_runner/tool_handler.rs
 
 use super::{ChatRunner, StateManager};
-use crate::agent::tool::{DynTool, ToolManager};
+use crate::agent::tool::ToolManager;
 use crate::error::{AmbiError, Result};
-use crate::types::message::Message;
+use crate::types::{DynTool, Message};
+
 use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
 impl ChatRunner {
+    /// To present generated pseudo-labels to humans (injecting into the output stream) and inform about tool usage.
+    /// This string is only for UI presentation and will not flow into the Agent's actual context.
     pub(crate) fn process_tool_calls_output(
         tool_calls: &[(String, String, String)],
         output_buffer: &mut String,
@@ -25,6 +28,7 @@ impl ChatRunner {
         }
     }
 
+    /// Execute the parsed tools with high concurrency and implement a ghost blocking mechanism within them.
     pub(crate) async fn handle_tool_calls(
         state_accessor: &StateManager<'_>,
         engine: &crate::llm::LLMEngine,
@@ -34,6 +38,7 @@ impl ChatRunner {
     ) -> Result<Vec<(String, String, String)>> {
         let mut results = Vec::new();
 
+        // Schedule multiple tools concurrently (maximum concurrency 5)
         let mut stream = stream::iter(calls)
             .map(move |(name, args, id)| {
                 let t_map = Arc::clone(&tool_map);
@@ -65,7 +70,10 @@ impl ChatRunner {
                             });
                             Ok((name, args.to_string(), msg, id))
                         }
-                        _ = async {
+
+                        // Ghost call cancellation mechanism: monitor whether the external communication channel is disconnected
+                        // Once the user actively disconnects (the stream channel is closed), immediately discard long-running background operations such as web crawlers and databases.
+                         _ = async {
                             if let Some(tx) = tx_clone {
                                 tx.closed().await;
                             } else {
@@ -82,6 +90,7 @@ impl ChatRunner {
             })
             .buffered(5);
 
+        // Collect the results of all concurrent tools and record them in the history database separately
         while let Some(res) = stream.next().await {
             let (name, args_str, msg, id) = res?;
 
@@ -97,6 +106,7 @@ impl ChatRunner {
                 .await?;
             results.push((name, args_str, msg));
         }
+
         Ok(results)
     }
 }

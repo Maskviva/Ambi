@@ -1,5 +1,5 @@
 // Import necessary dependencies.
-use ambi::types::config::OpenAIEngineConfig;
+use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
 use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
 use anyhow::Result;
 use futures::StreamExt;

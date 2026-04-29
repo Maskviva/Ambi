@@ -1,11 +1,11 @@
+// Import necessary configurations and traits from the Ambi framework.
+use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
+use ambi::types::ChatTemplateType;
+use ambi::{Agent, ChatRunner};
+use ambi::{AgentState, LLMEngineConfig};
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-// Import necessary configurations and traits from the Ambi framework.
-use ambi::llm::ChatTemplateType;
-use ambi::types::config::OpenAIEngineConfig;
-use ambi::{Agent, ChatRunner};
-use ambi::{AgentState, LLMEngineConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -1,4 +1,6 @@
-#![cfg(feature = "openai-api")]
+// src/llm/providers/openai_api/config.rs
+
+//! Configuration properties for network-based API engines.
 
 use crate::error::AmbiError;
 use serde::Deserialize;
@@ -24,14 +26,20 @@ use serde::Deserialize;
 /// ```
 #[derive(Debug, Deserialize, Clone)]
 pub struct OpenAIEngineConfig {
+    /// The secret authorization token for the endpoint.
     pub api_key: String,
+    /// The base URL (e.g., `https://api.openai.com/v1`).
     pub base_url: String,
+    /// The explicit model tag (e.g., `gpt-4o`).
     pub model_name: String,
+    /// The sampling temperature.
     pub temp: f32,
+    /// The top-p (nucleus) sampling threshold.
     pub top_p: f32,
 }
 
 impl OpenAIEngineConfig {
+    /// Validates the API parameters before networking.
     pub fn validate(&self) -> crate::error::Result<()> {
         if self.api_key.trim().is_empty() {
             return Err(AmbiError::EngineError(

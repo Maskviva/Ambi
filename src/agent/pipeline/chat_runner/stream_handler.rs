@@ -1,24 +1,19 @@
 // src/agent/pipeline/chat_runner/stream_handler.rs
 
 use super::ChatRunner;
-use crate::agent::tool::{StreamFormatter, ToolCallParser};
+use crate::agent::core::FormatterFactory;
 use crate::error::{AmbiError, Result};
-use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 impl ChatRunner {
     pub(crate) async fn process_llm_stream(
         mut rx_llm: Receiver<Result<String>>,
         tx_out: &Sender<Result<String>>,
-        parser: &Arc<dyn ToolCallParser>,
-        enable_formatting: bool,
+        formatter_factory: &FormatterFactory,
     ) -> (String, Option<AmbiError>) {
         let mut full_output = String::with_capacity(1024);
-        let mut formatter: Box<dyn StreamFormatter> = if enable_formatting {
-            parser.create_stream_formatter()
-        } else {
-            Box::new(crate::agent::core::formatter::PassThroughFormatter)
-        };
+
+        let mut formatter = formatter_factory();
         let mut last_error: Option<AmbiError> = None;
 
         while let Some(result) = rx_llm.recv().await {
@@ -43,7 +38,6 @@ impl ChatRunner {
             }
         }
 
-        // 流结束，flush 剩余缓冲
         if last_error.is_none() {
             let flushed = formatter.flush();
             if !flushed.is_empty() {

@@ -1,11 +1,15 @@
 // src/llm/providers/llama_cpp/vision.rs
 use crate::error::{AmbiError, Result};
-use base64::{engine::general_purpose, Engine as _};
-use log::info;
-use std::path::Path;
 
 #[cfg(feature = "mtmd")]
-use llama_cpp_2::mtmd::{MtmdBitmap, MtmdContext, MtmdContextParams};
+use {
+    base64::{engine::general_purpose, Engine as _},
+    llama_cpp_2::model::LlamaModel,
+    llama_cpp_2::mtmd::{MtmdBitmap, MtmdContext, MtmdContextParams},
+};
+
+use log::info;
+use std::path::Path;
 
 pub(crate) enum VisionContext {
     #[cfg(feature = "mtmd")]
@@ -19,7 +23,7 @@ impl VisionContext {
     pub fn init(
         mmproj_path: Option<&String>,
         integrated: bool,
-        model: &llama_cpp_2::model::LlamaModel,
+        #[cfg(feature = "mtmd")] model: &LlamaModel,
     ) -> Result<Option<Self>> {
         if let Some(path) = mmproj_path {
             if !Path::new(path).exists() {
@@ -75,11 +79,7 @@ impl VisionContext {
         }
     }
 
-    #[cfg(not(feature = "mtmd"))]
-    pub fn create_bitmaps(&self, _images: &[String]) -> Result<Vec<()>> {
-        Err(AmbiError::EngineError("MTMD feature not enabled".into()))
-    }
-
+    #[cfg(feature = "mtmd")]
     pub fn decode_base64_image(base64_img: &str) -> Result<Vec<u8>> {
         let clean_b64 = if let Some(idx) = base64_img.find("base64,") {
             &base64_img[idx + 7..]

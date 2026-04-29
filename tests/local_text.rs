@@ -1,6 +1,6 @@
 #[cfg(all(test, feature = "llama-cpp"))]
 mod tests {
-    use ambi::types::config::LlamaEngineConfig;
+    use ambi::llm::providers::llama_cpp::config::LlamaEngineConfig;
     use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
     use std::io::Write;
     use std::sync::Arc;
