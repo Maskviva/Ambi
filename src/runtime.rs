@@ -62,8 +62,8 @@ impl std::error::Error for Elapsed {}
 #[inline]
 pub async fn spawn_blocking<F, R>(f: F) -> Result<R, JoinError>
 where
-    F: FnOnce() -> R + Send + 'static,
-    R: Send + 'static,
+    F: FnOnce() -> R + 'static,
+    R:  'static,
 {
     // WASM is inherently single-threaded. We bypass the thread pool and execute directly.
     Ok(f())
@@ -113,8 +113,7 @@ where
 
 // Cross-Platform Send/Sync Marker
 
-/// A marker trait that enforces thread safety on native platforms,
-/// but gracefully degrades to nothing in single-threaded WASM environments.
+/// Send  but gracefully degrades to nothing in single-threaded WASM environments.
 #[cfg(not(target_arch = "wasm32"))]
 pub trait SendSync: Send + Sync {}
 
