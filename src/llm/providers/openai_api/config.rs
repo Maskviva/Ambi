@@ -14,7 +14,7 @@ use serde::Deserialize;
 /// # Examples
 ///
 /// ```rust
-/// use ambi::types::config::OpenAIEngineConfig;
+/// use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
 ///
 /// let config = OpenAIEngineConfig {
 ///     api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),

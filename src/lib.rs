@@ -22,8 +22,8 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use ambi::{Agent, AgentState, ChatRunner, OpenAIEngineConfig};
-//! use ambi::pipeline::Pipeline;
+//! use ambi::{Agent, AgentState, ChatRunner};
+//! use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
 //! use std::sync::Arc;
 //! use tokio::sync::RwLock;
 //!
