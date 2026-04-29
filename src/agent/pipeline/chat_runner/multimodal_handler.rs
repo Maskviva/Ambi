@@ -1,11 +1,14 @@
 // src/agent/pipeline/chat_runner/multimodal_handler.rs
 
 use super::{ChatRunner, StateManager};
-use crate::agent::core::{Agent, AgentState, EvictionHandler, FormatterFactory};
+use crate::agent::core::{
+    Agent, AgentState, DynToolObj, EvictionHandler, FormatterFactory, ToolCallParserObj,
+};
 use crate::config::EvictionStrategy;
 use crate::error::{AmbiError, Result};
 use crate::llm::LLMEngine;
-use crate::types::{ChatTemplate, DynTool, Message, ToolCallParser, ToolDefinition};
+use crate::runtime::spawn;
+use crate::types::{ChatTemplate, Message, ToolDefinition};
 use crate::ContentPart;
 
 use std::collections::HashMap;
@@ -34,8 +37,8 @@ pub(crate) struct LoopConfig<'a> {
 pub(crate) struct LoopTooling<'a> {
     pub tools_def: &'a Arc<Vec<ToolDefinition>>,
     pub cached_tool_prompt: &'a str,
-    pub tool_map: &'a Arc<HashMap<String, Arc<dyn DynTool>>>,
-    pub tool_parser: &'a Arc<dyn ToolCallParser>,
+    pub tool_map: &'a Arc<HashMap<String, Arc<DynToolObj>>>, // <-- Applied Type Alias
+    pub tool_parser: &'a Arc<ToolCallParserObj>,             // <-- Applied Type Alias
     pub formatter_factory: &'a FormatterFactory,
 }
 
@@ -91,6 +94,8 @@ impl ChatRunner {
     ) -> Result<Pin<Box<ReceiverStream<Result<String>>>>> {
         let (tx_out, rx_out) = channel::<Result<String>>(1024);
         let tx_out_for_panic = tx_out.clone();
+        #[cfg(target_arch = "wasm32")]
+        let _tx_out_for_panic = &tx_out_for_panic;
         let agent_clone = agent.clone();
         let state_clone = Arc::clone(state);
 
@@ -101,7 +106,7 @@ impl ChatRunner {
             .to_string(),
         )?;
 
-        let handle = tokio::spawn(async move {
+        let handle = spawn(async move {
             let tx_out_clone = tx_out.clone();
             let accessor = StateManager(&state_clone);
 
@@ -138,7 +143,8 @@ impl ChatRunner {
             }
         });
 
-        tokio::spawn(async move {
+        #[cfg(not(target_arch = "wasm32"))]
+        spawn(async move {
             if let Err(join_err) = handle.await {
                 if join_err.is_panic() {
                     log::error!("CRITICAL: Pipeline streaming task panicked internally.");
@@ -150,6 +156,9 @@ impl ChatRunner {
                 }
             }
         });
+
+        #[cfg(target_arch = "wasm32")]
+        drop(handle);
 
         Ok(Box::pin(ReceiverStream::new(rx_out)))
     }

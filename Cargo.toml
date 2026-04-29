@@ -33,24 +33,35 @@ rocm = ["llama-cpp", "llama-cpp-2/rocm", "llama-cpp-sys-2/rocm"]
 macro = ["dep:ambi-macros"]
 
 [dependencies]
+# --------------------------------------------------------
+# 全平台通用依赖 (Platform Agnostic)
+# 注意：这里绝对不能写 tokio！
+# --------------------------------------------------------
 log = "0.4"
 thiserror = "2.0.18"
-llama-cpp-2 = { version = "0.1.145", optional = true }
-llama-cpp-sys-2 = { version = "0.1.145", optional = true }
-async-openai = { version = "0.36.0", features = ["full"], optional = true }
-
-base64 = { version = "0.22.1", optional = true }
-
-ambi-macros = { version = "0.1.0", path = "ambi-macros", optional = true }
-
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde_json = "1.0.149"
-tokio = { version = "1.52.1", features = ["rt-multi-thread", "sync", "time", "macros"] }
-tokio-stream = "0.1.18"
 async-trait = "0.1.89"
 anyhow = "1.0.102"
 futures = "0.3.32"
 tiktoken-rs = "0.11.0"
+tokio-stream = "0.1.18"
+
+# 可选特性依赖
+base64 = { version = "0.22.1", optional = true }
+ambi-macros = { version = "0.1.0", path = "ambi-macros", optional = true }
+async-openai = { version = "0.36.0", features = ["full"], optional = true }
+llama-cpp-2 = { version = "0.1.145", optional = true }
+llama-cpp-sys-2 = { version = "0.1.145", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1.52.1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1.52.1", features = ["sync", "macros"] }
+wasm-bindgen-futures = "0.4"
+gloo-timers = { version = "0.4.0", features = ["futures"] }
+getrandom = { version = "=0.2", features = ["js"] }
 
 [package.metadata.docs.rs]
 all-features = true

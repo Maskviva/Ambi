@@ -6,6 +6,7 @@ use crate::agent::tool::DefaultToolParser;
 use crate::config::{AgentConfig, EvictionStrategy};
 use crate::error::{AmbiError, Result};
 use crate::llm::{LLMEngine, LLMEngineConfig, LLMEngineTrait};
+use crate::runtime::spawn_blocking;
 use crate::types::{ChatTemplate, Message, StreamFormatter, Tool, ToolCallParser, ToolDefinition};
 
 use std::collections::HashMap;
@@ -15,7 +16,7 @@ impl Agent {
     /// # Constructors
     /// Creates a new Agent using a standard, framework-supported `LLMEngineConfig`.
     pub async fn make(engine_cfg: LLMEngineConfig) -> Result<Self> {
-        let engine = tokio::task::spawn_blocking(move || LLMEngine::load(engine_cfg))
+        let engine = spawn_blocking(move || LLMEngine::load(engine_cfg))
             .await
             .map_err(|e| {
                 AmbiError::EngineError(format!("Failed to spawn blocking task: {}", e))
@@ -112,11 +113,23 @@ impl Agent {
         }
     }
 
-    /// # Processors & Lifecycle Hooks
+    // --- Processors & Lifecycle Hooks ---
+
     /// Injects a custom stream formatter factory to manipulate raw LLM output text on the fly.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_stream_formatter<F>(mut self, factory: F) -> Self
     where
-        F: Fn() -> Box<dyn StreamFormatter> + Send + Sync + 'static,
+        F: Fn() -> Box<dyn StreamFormatter + Send + Sync> + Send + Sync + 'static,
+    {
+        self.formatter_factory = Arc::new(factory);
+        self
+    }
+
+    /// Injects a custom stream formatter factory to manipulate raw LLM output text on the fly.
+    #[cfg(target_arch = "wasm32")]
+    pub fn with_stream_formatter<F>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> Box<dyn StreamFormatter> + 'static,
     {
         self.formatter_factory = Arc::new(factory);
         self
@@ -142,9 +155,21 @@ impl Agent {
 
     /// Registers a callback that triggers whenever conversation history is evicted
     /// due to token capacity limits. Useful for logging or persisting cold data.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn on_evict<F>(mut self, handler: F) -> Self
     where
         F: Fn(Vec<Arc<Message>>) + Send + Sync + 'static,
+    {
+        self.on_evict_handler = Some(Arc::new(handler));
+        self
+    }
+
+    /// Registers a callback that triggers whenever conversation history is evicted
+    /// due to token capacity limits. Useful for logging or persisting cold data.
+    #[cfg(target_arch = "wasm32")]
+    pub fn on_evict<F>(mut self, handler: F) -> Self
+    where
+        F: Fn(Vec<Arc<Message>>) + 'static,
     {
         self.on_evict_handler = Some(Arc::new(handler));
         self

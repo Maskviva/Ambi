@@ -80,6 +80,12 @@ compile_error!(
     "Cannot enable multiple LLM hardware acceleration backends. Please select only one of: cuda, vulkan, metal, rocm."
 );
 
+#[cfg(all(target_arch = "wasm32", feature = "llama-cpp"))]
+compile_error!(
+    "The 'llama-cpp' feature is not supported when compiling for WebAssembly (wasm32). \
+    Please use the 'openai-api' feature (which supports browser networks) or disable default features."
+);
+
 /// Agent Framework Core
 pub mod agent;
 
@@ -94,6 +100,9 @@ pub mod llm;
 
 /// Types
 pub mod types;
+
+/// Cross-platform compilation adaptation
+mod runtime;
 
 #[cfg(feature = "macro")]
 pub use ambi_macros::tool;

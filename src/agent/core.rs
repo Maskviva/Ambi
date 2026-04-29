@@ -20,12 +20,30 @@ use std::sync::Arc;
 
 /// # Types & Aliases
 /// Type alias for a closure that acts as a callback when context tokens are evicted.
+#[cfg(not(target_arch = "wasm32"))]
 pub type EvictionHandler = Arc<dyn Fn(Vec<Arc<Message>>) + Send + Sync>;
+#[cfg(target_arch = "wasm32")]
+pub type EvictionHandler = Arc<dyn Fn(Vec<Arc<Message>>)>;
 
 /// Type alias for a factory closure that produces stream formatters per request.
-pub type FormatterFactory = Arc<dyn Fn() -> Box<dyn StreamFormatter> + Send + Sync>;
+#[cfg(not(target_arch = "wasm32"))]
+pub type FormatterFactory = Arc<dyn Fn() -> Box<dyn StreamFormatter + Send + Sync> + Send + Sync>;
+#[cfg(target_arch = "wasm32")]
+pub type FormatterFactory = Arc<dyn Fn() -> Box<dyn StreamFormatter>>;
 
-/// # State Management
+// Trait object aliases to handle Send + Sync disparities elegantly.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) type DynToolObj = dyn DynTool + Send + Sync;
+#[cfg(target_arch = "wasm32")]
+pub(crate) type DynToolObj = dyn DynTool;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) type ToolCallParserObj = dyn ToolCallParser + Send + Sync;
+#[cfg(target_arch = "wasm32")]
+pub(crate) type ToolCallParserObj = dyn ToolCallParser;
+
+// --- State Management ---
+
 /// Holds the mutable conversational memory and context of the Agent.
 ///
 /// `AgentState` is decoupled from the `Agent` itself, allowing a single `Agent`
@@ -69,8 +87,8 @@ pub struct Agent {
 
     // Tooling
     pub(crate) tools_def: Arc<Vec<ToolDefinition>>,
-    pub(crate) tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
-    pub(crate) tool_parser: Arc<dyn ToolCallParser>,
+    pub(crate) tool_map: Arc<HashMap<String, Arc<DynToolObj>>>,
+    pub(crate) tool_parser: Arc<ToolCallParserObj>,
     pub(crate) cached_tool_prompt: String,
 
     // Processors & Hooks

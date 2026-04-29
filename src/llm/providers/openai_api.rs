@@ -8,13 +8,19 @@ use crate::error::{AmbiError, Result};
 use crate::llm::LLMEngineTrait;
 use crate::types::LLMRequest;
 use async_openai::config::OpenAIConfig;
-use async_openai::types::chat::ChatCompletionMessageToolCallChunk;
 use async_openai::Client;
 use async_trait::async_trait;
-use futures::StreamExt;
-use log::debug;
-use std::collections::BTreeMap;
 use tokio::sync::mpsc::Sender;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::collections::BTreeMap;
+
+#[cfg(not(target_arch = "wasm32"))]
+use async_openai::types::chat::ChatCompletionMessageToolCallChunk;
+#[cfg(not(target_arch = "wasm32"))]
+use futures::StreamExt;
+#[cfg(not(target_arch = "wasm32"))]
+use log::debug;
 
 /// The OpenAI API engine implementation.
 ///
@@ -88,6 +94,25 @@ impl OpenAIEngine {
         request: LLMRequest,
         tx: Sender<Result<String>>,
     ) -> Result<()> {
+        #[cfg(target_arch = "wasm32")]
+        {
+            // WASM: async-openai's create_stream is not available; fall back to non-streaming
+            let response = self.generate_response_sync(request).await?;
+            let _ = tx.send(Ok(response)).await;
+            return Ok(());
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.generate_response_stream_native(request, tx).await
+    }
+
+    /// Native-only streaming implementation using async-openai's create_stream.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn generate_response_stream_native(
+        &self,
+        request: LLMRequest,
+        tx: Sender<Result<String>>,
+    ) -> Result<()> {
         if let Some(msg) = request.history.last() {
             debug!("\n[OpenAI API] Request\n====================\n{}", msg);
         }
@@ -150,6 +175,7 @@ impl OpenAIEngine {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn collect_tool_call_delta(
         map: &mut BTreeMap<u32, (String, String)>,
         calls: Vec<ChatCompletionMessageToolCallChunk>,
@@ -181,7 +207,8 @@ impl OpenAIEngine {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl LLMEngineTrait for OpenAIEngine {
     async fn chat(&self, request: LLMRequest) -> Result<String> {
         self.generate_response_sync(request).await

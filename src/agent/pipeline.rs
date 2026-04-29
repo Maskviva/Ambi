@@ -16,6 +16,7 @@ use tokio_stream::wrappers::ReceiverStream;
 ///
 /// Any struct implementing `Pipeline` can orchestrate the interaction between the LLM,
 /// tool resolution, context handling, and user output.
+#[cfg(not(target_arch = "wasm32"))]
 pub trait Pipeline: Send + Sync {
     /// Synchronous execution mode.
     /// Waits for the entire ReAct-style loop to complete and returns the final synthesized output.
@@ -34,6 +35,26 @@ pub trait Pipeline: Send + Sync {
         state: &Arc<RwLock<AgentState>>,
         input: Vec<ContentPart>,
     ) -> impl std::future::Future<Output = Result<Pin<Box<ReceiverStream<Result<String>>>>>> + Send;
+}
+
+/// WASM-compatible execution pipeline (removes thread-safety bounds).
+#[cfg(target_arch = "wasm32")]
+pub trait Pipeline {
+    /// Synchronous execution mode for WASM.
+    fn execute(
+        &self,
+        agent: &Agent,
+        state: &Arc<RwLock<AgentState>>,
+        input: Vec<ContentPart>,
+    ) -> impl std::future::Future<Output = Result<String>>;
+
+    /// Streaming execution mode for WASM.
+    fn execute_stream(
+        &self,
+        agent: &Agent,
+        state: &Arc<RwLock<AgentState>>,
+        input: Vec<ContentPart>,
+    ) -> impl std::future::Future<Output = Result<Pin<Box<ReceiverStream<Result<String>>>>>>;
 }
 
 pub use chat_runner::ChatRunner;

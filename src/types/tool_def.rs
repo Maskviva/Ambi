@@ -1,5 +1,8 @@
 // src/types/tool_def.rs
 
+//! Standard definitions and traits for extending the Agent with custom tools.
+
+use crate::runtime::SendSync;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -47,7 +50,7 @@ impl Error for ToolErr {}
 /// APIs, databases, or local system commands.
 ///
 /// # Cancellation Safety & Timeouts
-/// The framework strictly enforces timeouts (default 15s) using `tokio::time::timeout`.
+/// The framework strictly enforces timeouts (default 15s).
 /// If your tool modifies external state (e.g., executing a payment or writing to a database),
 /// you **MUST** ensure `is_idempotent` is set to `false`. Non-idempotent tools will fail fast
 /// on timeout and will **not** be retried, preventing duplicate real-world side effects.
@@ -93,8 +96,9 @@ impl Error for ToolErr {}
 ///     }
 /// }
 /// ```
-#[async_trait]
-pub trait Tool: Send + Sync {
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+pub trait Tool: SendSync {
     /// The unique name of the tool.
     const NAME: &'static str;
 
@@ -118,8 +122,9 @@ pub trait Tool: Send + Sync {
 
 /// An object-safe version of `Tool` used internally by the framework for dynamic dispatch.
 /// Users do not need to implement this directly; a blanket implementation is provided.
-#[async_trait]
-pub trait DynTool: Send + Sync {
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+pub trait DynTool: SendSync {
     /// Retrieves the tool's name.
     fn name(&self) -> String;
     /// Retrieves the tool's definition.
@@ -128,10 +133,11 @@ pub trait DynTool: Send + Sync {
     async fn call_json(&self, args: Value) -> Result<Value, ToolErr>;
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl<T> DynTool for T
 where
-    T: Tool + Send + Sync,
+    T: Tool + SendSync,
 {
     fn name(&self) -> String {
         Tool::name(self)
@@ -149,7 +155,7 @@ where
 }
 
 /// A generic interface for formatting text streams in real-time.
-pub trait StreamFormatter: Send + Sync {
+pub trait StreamFormatter: SendSync {
     /// Pushes a new raw token into the formatter, returning any cleaned, ready-to-display output.
     fn push(&mut self, token: &str) -> String;
 
@@ -158,7 +164,7 @@ pub trait StreamFormatter: Send + Sync {
 }
 
 /// A generic interface for parsing raw LLM output text into structured tool calls.
-pub trait ToolCallParser: Send + Sync {
+pub trait ToolCallParser: SendSync {
     /// Returns the literal start and end tags used by the parser (e.g., `[TOOL_CALL]`, `[/TOOL_CALL]`).
     fn get_tags(&self) -> (String, String);
 

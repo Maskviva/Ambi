@@ -4,6 +4,7 @@
 
 use crate::error::{AmbiError, Result};
 use crate::llm::tokenizer::{DefaultTokenizer, TokenizerTrait};
+use crate::runtime::SendSync;
 use crate::types::LLMRequest;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -33,8 +34,9 @@ pub enum LLMEngineConfig {
 ///
 /// Any third-party model backend wishing to integrate with the Ambi framework
 /// simply needs to implement this Trait and inject it via `Agent::with_custom_engine`.
-#[async_trait]
-pub trait LLMEngineTrait: Send + Sync {
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+pub trait LLMEngineTrait: SendSync {
     /// Executes a complete synchronous chat inference, returning the full
     /// response string (including raw text for tool calls).
     async fn chat(&self, request: LLMRequest) -> Result<String>;

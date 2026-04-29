@@ -1,9 +1,10 @@
 // src/agent/pipeline/chat_runner/tool_handler.rs
 
 use super::{ChatRunner, StateManager};
+use crate::agent::core::DynToolObj; // <-- Import Type Alias
 use crate::agent::tool::ToolManager;
 use crate::error::{AmbiError, Result};
-use crate::types::{DynTool, Message};
+use crate::types::Message;
 
 use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
@@ -32,7 +33,7 @@ impl ChatRunner {
     pub(crate) async fn handle_tool_calls(
         state_accessor: &StateManager<'_>,
         engine: &crate::llm::LLMEngine,
-        tool_map: Arc<HashMap<String, Arc<dyn DynTool>>>,
+        tool_map: Arc<HashMap<String, Arc<DynToolObj>>>, // <-- Applied Type Alias
         calls: Vec<(String, serde_json::Value, String)>,
         tx_out: Option<Sender<Result<String>>>,
     ) -> Result<Vec<(String, String, String)>> {
@@ -71,7 +72,7 @@ impl ChatRunner {
                             Ok((name, args.to_string(), msg, id))
                         }
 
-                        // Ghost call cancellation mechanism: monitor whether the external communication channel is disconnected
+                       // Ghost call cancellation mechanism: monitor whether the external communication channel is disconnected
                         // Once the user actively disconnects (the stream channel is closed), immediately discard long-running background operations such as web crawlers and databases.
                          _ = async {
                             if let Some(tx) = tx_clone {

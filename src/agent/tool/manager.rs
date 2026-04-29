@@ -1,11 +1,14 @@
 // src/agent/tool/manager.rs
 
-use crate::types::{DynTool, ToolErr};
+//! Safely handles timeouts and retries for asynchronous tools.
+
+use crate::agent::core::DynToolObj; // <-- Import Type Alias
+use crate::runtime::{sleep, timeout};
+use crate::types::ToolErr;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::{sleep, timeout};
 
 /// The static orchestrator for executing tools dynamically.
 pub struct ToolManager;
@@ -14,7 +17,7 @@ impl ToolManager {
     /// Execute the specified tool call.
     /// Includes strict timeout control and retry mechanism.
     pub async fn run_tool(
-        tool_map: &HashMap<String, Arc<dyn DynTool>>,
+        tool_map: &HashMap<String, Arc<DynToolObj>>, // <-- Applied Type Alias
         name: String,
         args: &Value,
     ) -> Result<String, ToolErr> {
