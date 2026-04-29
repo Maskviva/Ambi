@@ -1,6 +1,6 @@
 [package]
 name = "ambi"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2021"
 description = "A flexible, multi-backend, customizable AI agent framework, entirely based on Rust."
 license = "Apache-2.0"
@@ -30,6 +30,8 @@ vulkan = ["llama-cpp", "llama-cpp-2/vulkan", "llama-cpp-sys-2/vulkan"]
 metal = ["llama-cpp", "llama-cpp-2/metal", "llama-cpp-sys-2/metal"]
 rocm = ["llama-cpp", "llama-cpp-2/rocm", "llama-cpp-sys-2/rocm"]
 
+macro = ["dep:ambi-macros"]
+
 [dependencies]
 log = "0.4"
 thiserror = "2.0.18"
@@ -38,6 +40,8 @@ llama-cpp-sys-2 = { version = "0.1.145", optional = true }
 async-openai = { version = "0.36.0", features = ["full"], optional = true }
 
 base64 = { version = "0.22.1", optional = true }
+
+ambi-macros = { version = "0.1.0", path = "ambi-macros", optional = true }
 
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 serde_json = "1.0.149"
@@ -53,16 +57,36 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [[example]]
+name = "chat_cloud"
+required-features = ["openai-api"]
+
+[[example]]
 name = "chat_local"
 required-features = ["llama-cpp"]
 
 [[example]]
-name = "chat_cloud"
+name = "chat_stream"
 required-features = ["openai-api"]
+
+[[example]]
+name = "custom_chat_template"
+required-features = ["openai-api"]
+
+[[example]]
+name = "custom_model_back"
 
 [[example]]
 name = "custom_tool"
 required-features = ["openai-api"]
 
 [[example]]
-name = "custom_model_back"
+name = "custom_tool_in_macro"
+required-features = ["openai-api", "macro"]
+
+[[example]]
+name = "custom_tool_parser"
+required-features = ["openai-api"]
+
+[[example]]
+name = "memory_eviction_handler"
+required-features = ["openai-api"]

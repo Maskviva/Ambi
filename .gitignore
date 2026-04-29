@@ -3,6 +3,7 @@
 /log/
 /.cargo/
 /Cargo.lock
+/ambi-macros/Cargo.lock
 /run_ide.bat
 /example/chat_local/config.toml
 /copy_rs.bat

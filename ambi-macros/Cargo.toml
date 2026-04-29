@@ -1,0 +1,16 @@
+[package]
+name = "ambi-macros"
+version = "0.1.0"
+edition = "2021"
+description = "Procedural macros for Ambi"
+license = "Apache-2.0"
+repository = "https://github.com/Maskviva/Ambi"
+
+[lib]
+path = "src/lib.rs"
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
