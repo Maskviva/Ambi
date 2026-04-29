@@ -2,6 +2,8 @@
 
 ---
 
+> 这只是一个分包！主包在 https://crates.io/crates/ambi
+
 <p align="center">
   <a href="https://spdx.org/licenses/Apache-2.0.html"><img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License: GPL v3"></a>
   <a href="https://github.com/maskviva/ambi"><img alt="github" src="https://img.shields.io/badge/github-maskviva/Ambi-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20"></a>
