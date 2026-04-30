@@ -42,13 +42,9 @@ async fn main() -> Result<()> {
 
     // Step 7: Initiate a synchronous chat request to the LLM.
     // The agent will process the prompt, interact with the model, and return the final string.
-    let res = ChatRunner::chat(
-        &chat_runner,
-        &agent,
-        &agent_state,
-        "Who are you and what can you do?",
-    )
-    .await?;
+    let res = chat_runner
+        .chat(&agent, &agent_state, "Who are you and what can you do?")
+        .await?;
 
     // Step 6: Print the final response received from the model.
     print!("{}", res);

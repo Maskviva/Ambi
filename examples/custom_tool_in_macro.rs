@@ -73,13 +73,9 @@ async fn main() -> Result<()> {
     // Step 6: Execute the chat pipeline.
     // The agent will autonomously decide to invoke the `check_city_weather` tool
     // to fulfill the user's request, process the tool's output, and return the final synthesis.
-    let res = ChatRunner::chat(
-        &chat_runner,
-        &agent,
-        &agent_state,
-        "What's the weather in Beijing?",
-    )
-    .await?;
+    let res = chat_runner
+        .chat(&agent, &agent_state, "What's the weather in Beijing?")
+        .await?;
 
     println!("Assistant: {}", res);
 

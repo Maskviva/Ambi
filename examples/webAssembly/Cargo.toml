@@ -1,0 +1,31 @@
+[package]
+name = "ambi-wasm-example"
+version = "0.0.1"
+edition = "2021"
+description = "A demonstration of running the Ambi AI framework natively in the browser via WebAssembly."
+publish = false
+
+[lib]
+path = "lib.rs"
+# 'cdylib' is mandatory for WebAssembly to generate the .wasm dynamic library.
+crate-type = ["cdylib", "rlib"]
+
+[package.metadata.wasm-pack.profile.dev]
+# Disable optimization during development for faster compile times.
+wasm-opt = false
+
+[dependencies]
+# Reference the local Ambi framework (Cloud API only, as local inference isn't supported in browsers)
+ambi = { path = "../../../Ambi", features = ["openai-api"] }
+
+# WASM-compatible asynchronous runtime
+tokio = { version = "1.52.1", features = ["sync", "macros"] }
+
+# JS interoperability and future bridges
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+gloo-timers = { version = "0.4.0", features = ["futures"] }
+
+# Crucial: Provides system entropy (randomness) derived from JavaScript's Math.random,
+# which is required by underlying HTTP/Crypto libraries compiled into WASM.
+getrandom = { version = "=0.2", features = ["js"] }

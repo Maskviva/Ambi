@@ -89,12 +89,12 @@ async fn main() -> ambi::error::Result<()> {
         .with_standard_formatting();
 
     let state = Arc::new(RwLock::new(AgentState::new()));
-    let runner = ChatRunner;
+    let chat_runner = ChatRunner;
 
     println!("User: What is 12345 multiplied by 67890?");
 
     // The agent will automatically call the Rust tool, get the answer, and reply!
-    let response = runner
+    let response = chat_runner
         .chat(&agent, &state, "What is 12345 multiplied by 67890?")
         .await?;
     println!("Assistant: {}", response);

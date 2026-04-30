@@ -20,10 +20,13 @@ mod tests {
             top_p: 0.9,
         };
 
+        let chat_runner = ChatRunner;
+
         let agent = Agent::make(LLMEngineConfig::OpenAI(cfg)).await.unwrap();
         let agent_state = Arc::new(RwLock::new(AgentState::new()));
 
-        let res = ChatRunner::chat(&ChatRunner, &agent, &agent_state, "who are you")
+        let res = chat_runner
+            .chat(&agent, &agent_state, "who are you")
             .await
             .unwrap();
 

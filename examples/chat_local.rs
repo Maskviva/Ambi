@@ -50,13 +50,9 @@ async fn main() -> Result<()> {
 
     // Step 6: Send a chat message to the local model.
     // The framework handles prompt construction, context management, and inference.
-    let res = ChatRunner::chat(
-        &chat_runner,
-        &agent,
-        &agent_state,
-        "Who are you and what can you do?",
-    )
-    .await?;
+    let res = chat_runner
+        .chat(&agent, &agent_state, "Who are you and what can you do?")
+        .await?;
 
     // Step 7: Output the result to the console.
     print!("{}", res);

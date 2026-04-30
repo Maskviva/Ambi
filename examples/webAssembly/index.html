@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Ambi WASM Test</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            color: #333;
+        }
+
+        textarea, input {
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        #output {
+            background: #f8f9fa;
+            padding: 20px;
+            min-height: 100px;
+            white-space: pre-wrap;
+            margin-top: 10px;
+            border-radius: 4px;
+            border: 1px solid #e9ecef;
+        }
+
+        .controls input {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+<h1>Ambi Agent WASM</h1>
+
+<div style="margin-bottom: 20px;">
+    <button id="initBtn">1. Initialize Session</button>
+    <button id="clearBtn" disabled>Clear Memory</button>
+</div>
+
+<textarea id="prompt" rows="3" placeholder="Say hello to Ambi..."></textarea>
+<button id="sendBtn" disabled>2. Send to Ambi</button>
+
+<h3>Chat History:</h3>
+<div id="output">Please initialize the session first...</div>
+
+<script type="module">
+    // Import the auto-generated JavaScript bindings from wasm-pack
+    import init, {AmbiSession} from './pkg/ambi_wasm_example.js';
+
+    // Global reference to our stateful Rust instance
+    let session = null;
+
+    async function run() {
+        // Initialize the WebAssembly module
+        await init();
+        console.log("WASM Module loaded successfully!");
+
+        const output = document.getElementById("output");
+        const initBtn = document.getElementById("initBtn");
+        const sendBtn = document.getElementById("sendBtn");
+        const clearBtn = document.getElementById("clearBtn");
+
+        // 1. Initialize the persistent session
+        initBtn.onclick = async () => {
+            // Note: In production, do not hardcode API keys in frontend code.
+
+            const baseUrl = "https://api.openai.com/v1";
+            const modelName = "gpt-4o-mini";
+            const apiKey = "your-api-key"; // Ensure CORS is allowed
+
+            if (!apiKey) {
+                alert("API Key is required!");
+                return;
+            }
+
+            output.innerText = "Initializing persistent agent session...";
+            initBtn.disabled = true;
+
+            try {
+                // Call the Rust async constructor to create the instance
+                session = await AmbiSession.create(baseUrl, modelName, apiKey);
+                output.innerText = "Session initialized! I am ready to remember your conversation.";
+                sendBtn.disabled = false;
+                clearBtn.disabled = false;
+            } catch (e) {
+                output.innerText = "Initialization error: " + e;
+                initBtn.disabled = false;
+            }
+        };
+
+        // 2. Send dialogue to the Agent
+        sendBtn.onclick = async () => {
+            if (!session) return;
+
+            const promptBox = document.getElementById("prompt");
+            const prompt = promptBox.value;
+            if (!prompt.trim()) return;
+
+            // Append the user's prompt to the UI immediately
+            output.innerText += `\n\nUser: ${prompt}\nAssistant: Thinking...`;
+            promptBox.value = "";
+            sendBtn.disabled = true;
+
+            try {
+                // Reuse the session instance to invoke the chat pipeline
+                const response = await session.chat(prompt);
+
+                // Replace the "Thinking..." placeholder with the actual response
+                output.innerText = output.innerText.replace("Thinking...", response);
+            } catch (error) {
+                output.innerText += "\nError: " + error;
+            } finally {
+                sendBtn.disabled = false;
+            }
+        };
+
+        // 3. Clear memory (context eviction)
+        clearBtn.onclick = async () => {
+            if (!session) return;
+            await session.clear_memory();
+            output.innerText = "Memory cleared. The Agent has forgotten the past context.";
+        };
+    }
+
+    // Bootstrap the application
+    run();
+</script>
+</body>
+</html>

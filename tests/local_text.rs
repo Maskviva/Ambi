@@ -38,10 +38,10 @@ mod tests {
 
         let agent_state = Arc::new(RwLock::new(AgentState::new()));
 
-        let mut res_stream =
-            ChatRunner::chat_stream(&chat_runner, &agent, &agent_state, "我的名字是什么？")
-                .await
-                .unwrap();
+        let mut res_stream = chat_runner
+            .chat_stream(&agent, &agent_state, "What is my name?")
+            .await
+            .unwrap();
 
         let mut res_buffe = String::new();
 
