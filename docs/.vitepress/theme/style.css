@@ -17,12 +17,12 @@ html:not([lang="zh-CN"]) .VPHero .tagline {
 
 .VPNavBar {
     background-color: transparent !important;
+    backdrop-filter: blur(5px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(5px) saturate(180%) !important;
 }
 
 .VPNavBar:not(.home) .content-body {
     background: rgba(255, 255, 255, 0.6) !important;
-    backdrop-filter: blur(5px) saturate(180%) !important;
-    -webkit-backdrop-filter: blur(5px) saturate(180%) !important;
 }
 
 .dark .VPNavBar:not(.home) .content-body {
