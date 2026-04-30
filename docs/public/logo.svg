@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="100%" height="100%">
+    <defs>
+        <filter id="glow-blur">
+            <feGaussianBlur stdDeviation="4"/>
+        </filter>
+
+        <mask id="spark-mask">
+            <rect width="100%" height="100%" fill="white"/>
+            <path d="M 60 15 Q 60 40 35 40 Q 60 40 60 65 Q 60 40 85 40 Q 60 40 60 15 Z" fill="black"/>
+        </mask>
+
+        <style>
+            .glow {
+                fill: none;
+                stroke: #C08060;
+                stroke-width: 10;
+                opacity: 0.4;
+                filter: url(#glow-blur);
+            }
+        </style>
+    </defs>
+
+    <circle cx="80" cy="80" r="64" class="glow"/>
+
+    <circle cx="80" cy="80" r="64" fill="#0A0A0C"/>
+
+    <g transform="translate(20, 20)">
+        <path d="M 45 0 L 75 0 L 120 120 L 85 120 L 60 65 L 35 120 L 0 120 Z"
+              fill="#FFFFFF"
+              mask="url(#spark-mask)"/>
+    </g>
+</svg>

@@ -7,3 +7,7 @@
 /run_ide.bat
 /example/chat_local/config.toml
 /copy_rs.bat
+/docs/node_modules
+/docs/pnpm-lock.yaml
+/docs/.vitepress/dist
+/docs/.vitepress/cache

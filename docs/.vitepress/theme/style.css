@@ -1,0 +1,42 @@
+/*
+ * English home page hero text adjustment.
+ * 
+ * Chinese characters are wider than Latin letters, so the same font size
+ * makes English text look visually larger and more "spread out".
+ * We reduce the size slightly for the English locale only.
+ */
+
+html:not([lang="zh-CN"]) .VPHero .text {
+    font-size: 43px;
+    line-height: 1;
+}
+
+html:not([lang="zh-CN"]) .VPHero .tagline {
+    font-size: 20px;
+}
+
+.VPNavBar {
+    background-color: transparent !important;
+}
+
+.VPNavBar:not(.home) .content-body {
+    background: rgba(255, 255, 255, 0.6) !important;
+    backdrop-filter: blur(5px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(5px) saturate(180%) !important;
+}
+
+.dark .VPNavBar:not(.home) .content-body {
+    background: rgba(27, 27, 31, 0.6) !important;
+}
+
+.dark {
+    --vp-c-gutter: #282839;
+}
+
+.title img {
+    background-color: rgb(0 0 0 / 0.36) !important;
+    backdrop-filter: blur(5px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(5px) saturate(180%) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 0 10px 0 rgb(0 0 0 / 0.36) !important;
+}
