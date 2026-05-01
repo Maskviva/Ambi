@@ -33,13 +33,13 @@
 
 ```toml
 [dependencies]
-ambi = "0.2"
+ambi = "0.3"
 ```
 
 仅使用云端 API（编译更快，无需 `llama.cpp` 依赖）：
 
 ```toml
-ambi = { version = "0.2", default-features = false, features = ["openai-api"] }
+ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
 ```
 
 ## 运行时要求
@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 启用 `llama-cpp` 特性，并可叠加 GPU 后端：
 
 ```toml
-ambi = { version = "0.2", features = ["llama-cpp", "cuda"] }
+ambi = { version = "0.3", features = ["llama-cpp", "cuda"] }
 ```
 
 然后切换引擎配置：

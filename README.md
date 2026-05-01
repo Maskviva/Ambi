@@ -37,13 +37,13 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ambi = "0.2"
+ambi = "0.3"
 ```
 
 For cloud‑only usage (faster compilation, no `llama.cpp` dependency):
 
 ```toml
-ambi = { version = "0.2", default-features = false, features = ["openai-api"] }
+ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
 ```
 
 ## Runtime Requirements
@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 Enable the `llama-cpp` feature and optionally a GPU backend:
 
 ```toml
-ambi = { version = "0.2", features = ["llama-cpp", "cuda"] }
+ambi = { version = "0.3", features = ["llama-cpp", "cuda"] }
 ```
 
 Then swap the engine configuration:
