@@ -12,7 +12,8 @@
 /docs/.vitepress/dist
 /docs/.vitepress/cache
 /bindings/node/package-lock.json
+/bindings/node/Cargo.lock
 /bindings/node/node_modules
 /bindings/node/index.d.ts
 /bindings/node/index.js
-/bindings/node/ambi-node.win32-x64-msvc.node
+/bindings/node/npm
