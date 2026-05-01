@@ -31,9 +31,10 @@ impl Agent {
         Ok(Self::init_agent(engine))
     }
 
-    pub(super) fn init_agent(engine: LLMEngine) -> Self {
-        let llm_engine = Arc::new(engine);
-
+    /// Creates an Agent from an already-initialized Engine (Arc).
+    ///
+    /// This is the primitive constructor; `init_agent` and `make` both go through this.
+    pub fn from_engine(llm_engine: Arc<LLMEngine>) -> Self {
         Self {
             llm_engine,
             config: AgentConfig::default(),
@@ -44,6 +45,10 @@ impl Agent {
             formatter_factory: Arc::new(|| Box::new(PassThroughFormatter)),
             cached_tool_prompt: String::new(),
         }
+    }
+
+    pub(super) fn init_agent(engine: LLMEngine) -> Self {
+        Self::from_engine(Arc::new(engine))
     }
 
     /// # Core Configuration

@@ -11,3 +11,8 @@
 /docs/pnpm-lock.yaml
 /docs/.vitepress/dist
 /docs/.vitepress/cache
+/bindings/node/package-lock.json
+/bindings/node/node_modules
+/bindings/node/index.d.ts
+/bindings/node/index.js
+/bindings/node/ambi-node.win32-x64-msvc.node

@@ -1,0 +1,23 @@
+# Rust source
+src/
+Cargo.toml
+Cargo.lock
+build.rs
+
+# Build artifacts
+target/
+*.node
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+
+# CI
+.github/
+
+# Docs (not needed for npm)
+docs/
+
+# Tests
+tests/
