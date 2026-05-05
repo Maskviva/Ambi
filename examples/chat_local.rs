@@ -4,8 +4,6 @@ use ambi::types::ChatTemplateType;
 use ambi::{Agent, AgentState};
 use ambi::{ChatRunner, LLMEngineConfig};
 use anyhow::Result;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -45,8 +43,8 @@ async fn main() -> Result<()> {
         .template(ChatTemplateType::Chatml)
         .preamble(system_prompt);
 
-    // Step 5: Initialize the agent state. The state will be stored here.
-    let agent_state = Arc::new(RwLock::new(AgentState::new()));
+    // Step 5: Initialize a thread-safe, shared agent state via the new_shared() convenience constructor.
+    let agent_state = AgentState::new_shared();
 
     // Step 6: Send a chat message to the local model.
     // The framework handles prompt construction, context management, and inference.

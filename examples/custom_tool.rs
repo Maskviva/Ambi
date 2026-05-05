@@ -3,8 +3,6 @@ use ambi::types::{Tool, ToolDefinition, ToolErr};
 use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 // 1. Define the input arguments structure
 #[derive(Deserialize)]
@@ -88,7 +86,8 @@ async fn main() -> ambi::error::Result<()> {
         .tool(CalculatorTool)? // <-- Injection
         .with_standard_formatting();
 
-    let state = Arc::new(RwLock::new(AgentState::new()));
+    // Initialize a thread-safe, shared agent state via the new_shared() convenience constructor.
+    let state = AgentState::new_shared();
     let chat_runner = ChatRunner;
 
     println!("User: What is 12345 multiplied by 67890?");

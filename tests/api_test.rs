@@ -2,8 +2,6 @@
 mod tests {
     use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
     use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
-    use std::sync::Arc;
-    use tokio::sync::RwLock;
 
     #[tokio::test]
     async fn test_ollama_local_api() {
@@ -23,7 +21,7 @@ mod tests {
         let chat_runner = ChatRunner;
 
         let agent = Agent::make(LLMEngineConfig::OpenAI(cfg)).await.unwrap();
-        let agent_state = Arc::new(RwLock::new(AgentState::new()));
+        let agent_state = AgentState::new_shared();
 
         let res = chat_runner
             .chat(&agent, &agent_state, "who are you")

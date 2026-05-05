@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .preamble("你是一个乐于助人的助手。")
         .template(ambi::ChatTemplateType::Chatml);
 
-    let state = std::sync::Arc::new(tokio::sync::RwLock::new(AgentState::new()));
+    let state = AgentState::new_shared();
     let runner = ChatRunner;
 
     let reply = runner.chat(&agent, &state, "你好！").await?;
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`Agent::make` 加载引擎（llama.cpp 时在阻塞线程上加载），然后用 builder 链式配置。`ChatRunner` 执行完整的 ReAct 循环。
+`AgentState::new_shared()` 是一个便捷构造器，内部用 `Arc<RwLock<>>` 包装状态以实现线程安全。`Agent::make` 加载引擎（llama.cpp 时在阻塞线程上加载），然后用 builder 链式配置。`ChatRunner` 执行完整的 ReAct 循环。
 
 ## 3. 切换引擎
 

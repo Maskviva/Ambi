@@ -17,6 +17,7 @@ use crate::types::{DynTool, Message, StreamFormatter, ToolCallParser, ToolDefini
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// # Types & Aliases
 /// Type alias for a closure that acts as a callback when context tokens are evicted.
@@ -60,6 +61,12 @@ impl AgentState {
         Self {
             chat_history: ChatHistory::new(),
         }
+    }
+
+    /// Convenience: returns a thread-shared, lock-protected AgentState,
+    /// ready to be passed directly into Pipeline::execute / execute_stream.
+    pub fn new_shared() -> Arc<RwLock<Self>> {
+        Arc::new(RwLock::new(Self::new()))
     }
 }
 

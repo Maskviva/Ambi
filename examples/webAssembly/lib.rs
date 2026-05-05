@@ -53,8 +53,8 @@ pub mod wasm_api {
                 .preamble("You are a smart AI running directly inside a Web Browser using WebAssembly! Please remember my context if I tell you.")
                 .with_standard_formatting();
 
-            // 3. Initialize the persistent memory state
-            let state = Arc::new(RwLock::new(AgentState::new()));
+            // 3. Initialize the persistent memory state via the thread-safe new_shared() constructor
+            let state = AgentState::new_shared();
 
             Ok(AmbiSession { agent, state })
         }

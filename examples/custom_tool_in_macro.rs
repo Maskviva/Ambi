@@ -4,8 +4,6 @@ use ambi::types::ToolErr;
 use ambi::{tool, Agent, AgentState, ChatRunner, LLMEngineConfig};
 use anyhow::Result;
 use serde::Serialize;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 /// Defines the structured output returned by the tool.
 /// The LLM will receive this data serialized as a JSON payload.
@@ -65,10 +63,10 @@ async fn main() -> Result<()> {
     // by simply passing its original function name (`get_weather`).
     let agent = Agent::make(engine_config).await?.tool(get_weather)?;
 
-    // Step 5: Initialize the thread-safe conversational memory.
+    // Step 5: Initialize a thread-safe, shared agent state via the new_shared() convenience constructor.
     // `AgentState` is decoupled from the `Agent` itself. This architecture allows
     // a single read-only Agent instance to handle multiple concurrent conversations safely.
-    let agent_state = Arc::new(RwLock::new(AgentState::new()));
+    let agent_state = AgentState::new_shared();
 
     // Step 6: Execute the chat pipeline.
     // The agent will autonomously decide to invoke the `check_city_weather` tool

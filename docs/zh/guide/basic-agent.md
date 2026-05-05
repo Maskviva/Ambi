@@ -43,7 +43,7 @@ let agent = Agent::make(config).await?
 Agent 把历史存在 `AgentState` 里。每次 `chat()` 都会追加用户消息和助手回复，下一轮自动带上上下文。
 
 ```rust
-let state = Arc::new(RwLock::new(AgentState::new()));
+let state = AgentState::new_shared();
 
 runner.chat(&agent, &state, "我叫小明。").await?;
 // 下一轮它记得"小明"

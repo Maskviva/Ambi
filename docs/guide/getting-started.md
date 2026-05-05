@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .preamble("You are a helpful assistant.")
         .template(ambi::ChatTemplateType::Chatml);
 
-    let state = std::sync::Arc::new(tokio::sync::RwLock::new(AgentState::new()));
+    let state = AgentState::new_shared();
     let runner = ChatRunner;
 
     let reply = runner.chat(&agent, &state, "Hello!").await?;
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-That's it. `Agent::make` loads the engine (spawned on a blocking thread for llama.cpp), then the builder lets you chain configuration. `ChatRunner` executes the full ReAct loop.
+`AgentState::new_shared()` is a convenience constructor that wraps the state in `Arc<RwLock<>>` for thread safety. That's it. `Agent::make` loads the engine (spawned on a blocking thread for llama.cpp), then the builder lets you chain configuration. `ChatRunner` executes the full ReAct loop.
 
 ## 3. Pick your engine
 

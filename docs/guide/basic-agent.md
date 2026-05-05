@@ -43,7 +43,7 @@ Default is `Chatml`. If your model requires a custom format, you can build a `Ch
 The agent keeps history in `AgentState`. Each call to `chat()` appends the user message and the assistant response to the state. The next call sees the full context.
 
 ```rust
-let state = Arc::new(RwLock::new(AgentState::new()));
+let state = AgentState::new_shared();
 
 runner.chat(&agent, &state, "My name is Alice.").await?;
 // The assistant remembers "Alice" in the next turn:
