@@ -44,6 +44,7 @@ pub enum LLMEngineConfig {
     OpenAI(OpenAIEngineConfig),
     #[cfg(feature = "llama-cpp")]
     Llama(LlamaEngineConfig),
+    Custom(Box<dyn LLMEngineTrait>),
 }
 ```
 
@@ -101,7 +102,7 @@ ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
 | `vulkan` | Vulkan 加速 | + Vulkan SDK |
 | `metal` | Apple Metal 加速 | + Metal framework |
 | `rocm` | AMD ROCm 加速 | + ROCm |
-| `macro` | `#[tool]` 属性宏 | `ambi-macros` |
+| `macro` | `#[tool]` 属性宏，支持 `params(...)` 参数描述 | `ambi-macros` |
 | `mtmd` | Llama 多模态支持 (VLM) | + `base64` |
 
 编译时不能同时启用两个 GPU 后端——有一个 `compile_error!` 守卫。

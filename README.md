@@ -56,8 +56,9 @@ Ambi is built on the Tokio async runtime. Ensure your project uses Tokio with `r
 ## Quick start
 
 ```rust
-use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig, Message};
-use std::sync::{Arc, Mutex};
+use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,16 +71,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         top_p: 0.95,
     });
 
-    // 2. Build an agent (5 lines of code!)
+    // 2. Build an agent
     let agent = Agent::make(config).await?
         .preamble("You are a helpful assistant.")
         .template(ambi::ChatTemplateType::Chatml);
 
-    // 3. Create a shared state
-    let state = Arc::new(Mutex::new(AgentState::new()));
+    // 3. Create a shared state with a unique session ID
+    let state = Arc::new(RwLock::new(AgentState::new("session-001")));
 
     // 4. Run the chat pipeline
-    let runner = ChatRunner;
+    let runner = ChatRunner::default();
     let response = runner.chat(&agent, &state, "Hello, world!").await?;
     println!("{}", response);
 
@@ -199,40 +200,79 @@ and parallel execution automatically.
 ```rust
 use futures::StreamExt;
 
-let mut stream = runner.chat_stream( & agent, & state, "Tell me a story").await?;
+let mut stream = runner.chat_stream(&agent, &state, "Tell me a story").await?;
 while let Some(chunk) = stream.next().await {
-match chunk {
-Ok(text) => print ! ("{}", text),
-Err(e) => eprintln !("Stream error: {}", e),
-}
+    match chunk {
+        Ok(text) => print!("{}", text),
+        Err(e) => eprintln!("Stream error: {}", e),
+    }
 }
 ```
+
+WASM targets (browser) support the same streaming API natively via `fetch` and `ReadableStream` – see
+[`examples/webAssembly`](https://github.com/maskviva/ambi/tree/main/examples/webAssembly) for a live demo.
 
 <br>
 
-## Context eviction
+## Context eviction & dynamic context
 
-Ambi’s context management automatically evicts old messages when the token budget is exceeded, but you can fine‑tune the
-strategy:
+Ambi's context management automatically evicts old messages when the token budget is exceeded, while completely
+decoupling system instructions from the eviction FIFO queue for maximum KV Cache hit rates.
+
+### Dynamic context (RAG / session data)
+
+Volatile background knowledge like RAG results or environment variables can be injected safely into `AgentState`
+without touching the static `system_prompt`:
 
 ```rust
-let agent = Agent::make(config).await?
-.with_eviction_strategy(
-2,    // keep at least first 2 messages
-6,    // keep at least most recent 6 messages
-3000, // max safe tokens before eviction
-);
+// Inject RAG results for the current turn
+state.write().await.set_dynamic_context("Relevant docs: ...");
+// Or stack multiple sources
+state.write().await.append_dynamic_context("Current time: 2025-01-01");
 ```
 
-You can also register a callback to process evicted messages (e.g., to persist them):
+Use `clear_dynamic_context()` to reset between turns.
+
+### Eviction strategy
+
+```rust
+use ambi::config::EvictionStrategy;
+
+let agent = Agent::make(config).await?
+    .with_eviction_strategy(EvictionStrategy { max_safe_tokens: 4096 });
+```
+
+### Eviction callback with state access
+
+The callback now receives `&AgentState`, giving you safe access to identifiers and connection pools from state
+extensions for async database archiving:
 
 ```rust
 let agent = Agent::make(config).await?
-.on_evict( | evicted| {
-for msg in evicted {
-// archive or log the message
+    .on_evict(|state: &AgentState, evicted: Vec<Arc<Message>>| {
+        let session_id = &state.session_id;
+        // Spawn an async task to archive evicted messages
+        tokio::spawn(async move {
+            // persist evicted messages to DB
+        });
+    });
+```
+
+### ChatHistory helpers
+
+```rust
+// Find messages containing a keyword
+let results = state.read().await.chat_history.search_by_keyword("weather");
+
+// Get the last user message
+if let Some(msg) = state.read().await.chat_history.last_user_message() {
+    // inspect the user's latest intent
 }
-});
+
+// Get the last assistant message
+if let Some(msg) = state.read().await.chat_history.last_assistant_message() {
+    // inspect the latest response
+}
 ```
 
 <br>
@@ -243,6 +283,7 @@ By default Ambi uses `[TOOL_CALL] ... [/TOOL_CALL]` tags. You can bring your own
 
 ```rust
 use ambi::tool::{ToolCallParser, DefaultToolParser};
+use ambi::types::StreamFormatter;
 
 struct MyParser;
 
@@ -257,13 +298,13 @@ impl ToolCallParser for MyParser {
         vec![]
     }
 
-    fn create_stream_formatter(&self) -> Box<dyn ambi::tool::StreamFormatter> {
-        Box::new(ambi::agent::core::formatter::PassThroughFormatter)
+    fn create_stream_formatter(&self) -> Box<dyn StreamFormatter> {
+        Box::new(ambi::agent::processor::PassThroughFormatter)
     }
 }
 
 let agent = Agent::make(config).await?
-.with_tool_parser(MyParser);
+    .with_tool_parser(MyParser);
 ```
 
 <br>
@@ -303,7 +344,7 @@ impl LLMEngineTrait for MockEngine {
     // ...
 }
 
-let agent = Agent::with_custom_engine(Box::new(MockEngine)) ?;
+let agent = Agent::make(LLMEngineConfig::Custom(Box::new(MockEngine))).await?;
 ```
 
 <br>
@@ -315,6 +356,8 @@ Ambi uses Cargo features to keep compile times low:
 - **`openai-api`** *(enabled by default)* – OpenAI‑compatible cloud backend powered by `async-openai`.
 - **`llama-cpp`** – Local inference via `llama.cpp` (supports `cuda`, `vulkan`, `metal`, `rocm` sub‑features).
 - **`cuda`**, **`vulkan`**, **`metal`**, **`rocm`** – GPU acceleration for the local engine (choose exactly one).
+- **`macro`** – Enables `#[tool]` attribute macro for zero-boilerplate tool definitions with `params(...)` support.
+- **`mtmd`** – Multimodal (vision) support for local VLM models (implies `llama-cpp`).
 
 <br>
 

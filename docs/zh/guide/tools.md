@@ -87,7 +87,10 @@ use ambi::tool;
     name = "search_docs",
     description = "搜索文档",
     params = {
-        "query": { "type": "string", "description": "搜索关键词" }
+        "query": {
+            "type": "string",
+            "description": "搜索关键词"
+        }
     }
 )]
 async fn search_docs(query: String) -> Result<String, ToolErr> {
@@ -95,6 +98,7 @@ async fn search_docs(query: String) -> Result<String, ToolErr> {
 }
 ```
 
+`params(...)` 属性让你可以直接在函数参数上注入面向 LLM 的描述信息，为模型提供更丰富的路由提示。
 宏会自动生成 `Tool` 实现、参数结构体和 `ToolDefinition`。
 
 ## 每个工具的配置
@@ -122,12 +126,22 @@ async fn search_docs(query: String) -> Result<String, ToolErr> {
 
 ## 并行执行
 
-一次 LLM 回复中的多个工具调用会并发执行，最大并发 5：
+一次 LLM 回复中的多个工具调用会并发执行。最大并发数通过 `ChatRunner` 配置（默认 5）：
+
+```rust
+use ambi::ChatRunner;
+
+// 默认并发（5）
+let runner = ChatRunner::default();
+
+// 自定义并发限制
+let runner = ChatRunner::new(3);
+```
 
 ```rust
 stream::iter(calls)
     .map(|(name, args, id)| run_tool(name, args, id))
-    .buffered(5)
+    .buffered(runner.maximum_concurrency)
 ```
 
 如果 LLM 调了三个工具，它们并行跑。一个比较慢不会阻塞其他的。

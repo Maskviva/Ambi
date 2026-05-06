@@ -44,6 +44,7 @@ pub enum LLMEngineConfig {
     OpenAI(OpenAIEngineConfig),
     #[cfg(feature = "llama-cpp")]
     Llama(LlamaEngineConfig),
+    Custom(Box<dyn LLMEngineTrait>),
 }
 ```
 
@@ -93,16 +94,16 @@ Validation runs at load time – if required fields are missing or out of range,
 ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
 ```
 
-| Feature     | What it enables                          | Dependencies                   |
-|-------------|------------------------------------------|--------------------------------|
-| `openai-api`| OpenAI-compatible cloud backend          | `async-openai`                 |
-| `llama-cpp` | Local inference via llama.cpp            | `llama-cpp-2`, `llama-cpp-sys-2` |
-| `cuda`      | CUDA acceleration (implies llama-cpp)    | + CUDA SDK                     |
-| `vulkan`    | Vulkan acceleration                      | + Vulkan SDK                   |
-| `metal`     | Apple Metal acceleration                 | + Metal framework               |
-| `rocm`      | AMD ROCm acceleration                    | + ROCm                         |
-| `macro`     | `#[tool]` attribute macro                | `ambi-macros`                  |
-| `mtmd`      | Multimodal support for Llama (VLM)       | + `base64`                     |
+| Feature     | What it enables                                   | Dependencies                   |
+|-------------|---------------------------------------------------|--------------------------------|
+| `openai-api`| OpenAI-compatible cloud backend                   | `async-openai`                 |
+| `llama-cpp` | Local inference via llama.cpp                     | `llama-cpp-2`, `llama-cpp-sys-2` |
+| `cuda`      | CUDA acceleration (implies llama-cpp)             | + CUDA SDK                     |
+| `vulkan`    | Vulkan acceleration                               | + Vulkan SDK                   |
+| `metal`     | Apple Metal acceleration                          | + Metal framework               |
+| `rocm`      | AMD ROCm acceleration                             | + ROCm                         |
+| `macro`     | `#[tool]` attribute macro with `params(...)` support | `ambi-macros`                  |
+| `mtmd`      | Multimodal support for Llama (VLM)                | + `base64`                     |
 
 You cannot enable more than one GPU backend at once – there's a compile-time `compile_error!` guard for this.
 

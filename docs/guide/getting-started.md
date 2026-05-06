@@ -27,7 +27,7 @@ GPU acceleration is available as sub-features: `cuda`, `vulkan`, `metal`, `rocm`
 ambi = { version = "0.3", features = ["llama-cpp", "cuda"] }
 ```
 
-## 2. Minimal agent – 10 lines
+## 2. Minimal agent
 
 ```rust
 use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
@@ -46,8 +46,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .preamble("You are a helpful assistant.")
         .template(ambi::ChatTemplateType::Chatml);
 
-    let state = AgentState::new_shared();
-    let runner = ChatRunner;
+    let state = AgentState::new_shared("session-001");
+    let runner = ChatRunner::default();
 
     let reply = runner.chat(&agent, &state, "Hello!").await?;
     println!("{}", reply);
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`AgentState::new_shared()` is a convenience constructor that wraps the state in `Arc<RwLock<>>` for thread safety. That's it. `Agent::make` loads the engine (spawned on a blocking thread for llama.cpp), then the builder lets you chain configuration. `ChatRunner` executes the full ReAct loop.
+`AgentState::new_shared("...")` is a convenience constructor that wraps the state in `Arc<RwLock<>>` for thread safety. The `session_id` parameter establishes physical uniqueness for distributed tracing and KV cache slotting. `Agent::make` loads the engine (spawned on a blocking thread for llama.cpp), then the builder lets you chain configuration. `ChatRunner::default()` creates a runner with concurrency limit of 5.
 
 ## 3. Pick your engine
 

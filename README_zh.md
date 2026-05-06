@@ -51,8 +51,9 @@ Ambi 构建在 Tokio 异步运行时上。确保你的项目使用启用 `rt-mul
 ## 快速开始
 
 ```rust
-use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig, Message};
-use std::sync::{Arc, Mutex};
+use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -65,16 +66,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         top_p: 0.95,
     });
 
-    // 2. 构建 Agent（仅需 5 行代码！）
+    // 2. 构建 Agent
     let agent = Agent::make(config).await?
         .preamble("你是一个乐于助人的助手。")
         .template(ambi::ChatTemplateType::Chatml);
 
-    // 3. 创建共享状态
-    let state = Arc::new(Mutex::new(AgentState::new()));
+    // 3. 创建共享状态（带唯一会话 ID）
+    let state = Arc::new(RwLock::new(AgentState::new("session-001")));
 
     // 4. 运行聊天流水线
-    let runner = ChatRunner;
+    let runner = ChatRunner::default();
     let response = runner.chat(&agent, &state, "你好，世界！").await?;
     println!("{}", response);
 
@@ -193,39 +194,76 @@ let agent = Agent::make(config).await?
 ```rust
 use futures::StreamExt;
 
-let mut stream = runner.chat_stream( & agent, & state, "给我讲个故事").await?;
+let mut stream = runner.chat_stream(&agent, &state, "给我讲个故事").await?;
 while let Some(chunk) = stream.next().await {
-match chunk {
-Ok(text) => print ! ("{}", text),
-Err(e) => eprintln !("流错误：{}", e),
-}
+    match chunk {
+        Ok(text) => print!("{}", text),
+        Err(e) => eprintln!("流错误：{}", e),
+    }
 }
 ```
+
+WASM 目标（浏览器）也原生支持相同的流式 API，基于 `fetch` 和 `ReadableStream`——参见
+[`examples/webAssembly`](https://github.com/maskviva/ambi/tree/main/examples/webAssembly) 的在线演示。
 
 <br>
 
-## 上下文驱逐
+## 上下文驱逐与动态上下文
 
-当令牌预算超出时，Ambi 的上下文管理会自动驱逐旧消息。你也可以精细调整策略：
+当令牌预算超出时，Ambi 的上下文管理会自动驱逐旧消息。系统指令与逐出 FIFO 队列完全解耦，最大化 KV Cache 命中率。
+
+### 动态上下文（RAG / 会话数据）
+
+像 RAG 结果或环境变量这样的易变背景知识，可以安全地注入到 `AgentState` 中，而不影响静态的 `system_prompt`：
 
 ```rust
-let agent = Agent::make(config).await?
-.with_eviction_strategy(
-2,    // 至少保留前 2 条消息
-6,    // 至少保留最近 6 条消息
-3000, // 触发驱逐的安全令牌上限
-);
+// 注入本次会话的 RAG 结果
+state.write().await.set_dynamic_context("相关文档：...");
+// 或叠加多个来源
+state.write().await.append_dynamic_context("当前时间：2025-01-01");
 ```
 
-你还可以注册回调来处理被驱逐的消息（例如持久化存储）：
+用 `clear_dynamic_context()` 在轮次之间重置。
+
+### 驱逐策略
+
+```rust
+use ambi::config::EvictionStrategy;
+
+let agent = Agent::make(config).await?
+    .with_eviction_strategy(EvictionStrategy { max_safe_tokens: 4096 });
+```
+
+### 带状态访问的驱逐回调
+
+回调现在接收 `&AgentState`，可以安全地从 state extensions 中提取标识符和连接池，用于异步数据库归档：
 
 ```rust
 let agent = Agent::make(config).await?
-.on_evict( | evicted| {
-for msg in evicted {
-// 存档或记录消息
+    .on_evict(|state: &AgentState, evicted: Vec<Arc<Message>>| {
+        let session_id = &state.session_id;
+        // 启动异步任务来归档被驱逐的消息
+        tokio::spawn(async move {
+            // 将被驱逐的消息持久化到数据库
+        });
+    });
+```
+
+### ChatHistory 辅助方法
+
+```rust
+// 搜索包含关键词的消息
+let results = state.read().await.chat_history.search_by_keyword("天气");
+
+// 获取最近一条用户消息
+if let Some(msg) = state.read().await.chat_history.last_user_message() {
+    // 检查用户的最新意图
 }
-});
+
+// 获取最近一条助手回复
+if let Some(msg) = state.read().await.chat_history.last_assistant_message() {
+    // 检查最新的回复内容
+}
 ```
 
 <br>
@@ -236,6 +274,7 @@ for msg in evicted {
 
 ```rust
 use ambi::tool::{ToolCallParser, DefaultToolParser};
+use ambi::types::StreamFormatter;
 
 struct MyParser;
 
@@ -250,13 +289,13 @@ impl ToolCallParser for MyParser {
         vec![]
     }
 
-    fn create_stream_formatter(&self) -> Box<dyn ambi::tool::StreamFormatter> {
-        Box::new(ambi::agent::core::formatter::PassThroughFormatter)
+    fn create_stream_formatter(&self) -> Box<dyn StreamFormatter> {
+        Box::new(ambi::agent::processor::PassThroughFormatter)
     }
 }
 
 let agent = Agent::make(config).await?
-.with_tool_parser(MyParser);
+    .with_tool_parser(MyParser);
 ```
 
 <br>
@@ -295,7 +334,7 @@ impl LLMEngineTrait for MockEngine {
     // ...
 }
 
-let agent = Agent::with_custom_engine(Box::new(MockEngine)) ?;
+let agent = Agent::make(LLMEngineConfig::Custom(Box::new(MockEngine))).await?;
 ```
 
 <br>
@@ -307,6 +346,8 @@ Ambi 利用 Cargo 特性来保持快速编译：
 - **`openai-api`** （默认启用） — 基于 `async-openai` 的 OpenAI 兼容云端后端。
 - **`llama-cpp`** — 基于 `llama.cpp` 的本地推理（支持 `cuda`、`vulkan`、`metal`、`rocm` 子特性）。
 - **`cuda`**、**`vulkan`**、**`metal`**、**`rocm`** — 本地引擎的 GPU 加速（仅能选择其一）。
+- **`macro`** — 启用 `#[tool]` 属性宏，支持 `params(...)` 参数描述，零样板代码定义工具。
+- **`mtmd`** — 本地 VLM 模型的多模态（视觉）支持（隐含 `llama-cpp`）。
 
 <br>
 

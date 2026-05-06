@@ -19,13 +19,20 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"
 
 `Agent::make()` 会 panic，因为 `spawn_blocking` 依赖多线程运行时。
 
-## Agent::with_custom_engine 不一样
+## LLMEngineConfig::Custom 不一样
 
-`with_custom_engine()` 直接包装 `Box<dyn LLMEngineTrait>`，**不会**调 `spawn_blocking`。它在任何 Tokio 运行时下都能工作：
+`LLMEngineConfig::Custom` 直接包装 `Box<dyn LLMEngineTrait>`，**不会**调 `spawn_blocking`。它在任何 Tokio 运行时下都能工作：
 
 ```rust
-let agent = Agent::with_custom_engine(Box::new(MockEngine))?; // 不需要 spawn_blocking
+use ambi::{Agent, LLMEngineConfig};
+
+let agent = Agent::make(
+    LLMEngineConfig::Custom(Box::new(MockEngine))
+).await?; // 不需要 spawn_blocking
 ```
+
+> **注意：** 旧的 `Agent::with_custom_engine()` 自 v0.3.3 起已废弃。
+> 请使用 `Agent::make(LLMEngineConfig::Custom(backend)).await` 替代。
 
 ## GPU 加速
 

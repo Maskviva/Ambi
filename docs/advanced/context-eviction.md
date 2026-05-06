@@ -42,16 +42,19 @@ pub fn evict_old_messages(&mut self, max_safe_tokens: usize, prompt_overhead: us
 ## What counts as "prompt overhead"
 
 The overhead includes:
-- System prompt tokens
-- Tool instruction prompt tokens
-- Any System-type messages in the history
+- System prompt tokens (from `AgentConfig`)
+- Dynamic context tokens (from `AgentState::dynamic_context`)
+- Tool instruction prompt tokens (cached in `Agent::cached_tool_prompt`)
+
+Note: `Message::System` is no longer pushed into `ChatHistory`. The history is a pure FIFO queue
+of `User`, `Assistant`, and `Tool` events, ensuring O(1) truncation and maximum KV Cache prefix matching.
 
 This is computed dynamically per iteration:
 
 ```rust
 let prompt_overhead = engine.count_tokens(system_prompt)?
-    + engine.count_tokens(tool_prompt)?
-    + dynamic_system_overhead;
+    + engine.count_tokens(&state.dynamic_context)?
+    + engine.count_tokens(&agent.cached_tool_prompt)?;
 ```
 
 ## Configuring the threshold
@@ -69,15 +72,22 @@ The default is 8000. For a model with 8K context, this leaves room for a ~4K out
 
 ## Eviction callback
 
-You can register a hook that fires whenever messages are evicted:
+You can register a hook that fires whenever messages are evicted. The callback now receives
+`&AgentState` as its first argument, allowing safe access to session identifiers and connection
+pools from state extensions for async database archiving:
 
 ```rust
+use ambi::{Agent, AgentState};
+use std::sync::Arc;
+
 let agent = Agent::make(config).await?
-    .on_evict(|evicted: Vec<Arc<Message>>| {
-        for msg in &evicted {
-            // Save to database, log, summarize, etc.
-            println!("Evicted: {:?}", msg);
-        }
+    .on_evict(|state: &AgentState, evicted: Vec<Arc<Message>>| {
+        let session_id = &state.session_id;
+        // NOTE: Runs while holding the AgentState write lock.
+        // Spawn an async task for I/O-heavy operations:
+        tokio::spawn(async move {
+            // persist evicted messages to DB
+        });
     });
 ```
 

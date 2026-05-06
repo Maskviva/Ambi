@@ -41,16 +41,19 @@ pub fn evict_old_messages(&mut self, max_safe_tokens: usize, prompt_overhead: us
 
 ## "prompt 开销"包括什么
 
-- 系统提示词 token
-- 工具指令提示词 token
-- 历史中的 System 类型消息
+- 系统提示词 token（来自 `AgentConfig`）
+- 动态上下文 token（来自 `AgentState::dynamic_context`）
+- 工具指令提示词 token（缓存在 `Agent::cached_tool_prompt`）
+
+注意：`Message::System` 不再被推入 `ChatHistory`。历史记录是 `User`、`Assistant`、`Tool` 事件的纯 FIFO 队列，
+确保 O(1) 截断和最大化 KV Cache 前缀匹配。
 
 每轮迭代动态计算：
 
 ```rust
 let prompt_overhead = engine.count_tokens(system_prompt)?
-    + engine.count_tokens(tool_prompt)?
-    + dynamic_system_overhead;
+    + engine.count_tokens(&state.dynamic_context)?
+    + engine.count_tokens(&agent.cached_tool_prompt)?;
 ```
 
 ## 配置阈值
@@ -68,15 +71,21 @@ let agent = Agent::make(config).await?
 
 ## 驱逐回调
 
-当消息被驱逐时可以注册一个钩子：
+当消息被驱逐时可以注册一个钩子。回调现在接收 `&AgentState` 作为第一个参数，可以安全地从 state extensions
+中提取会话标识符和连接池，用于异步数据库归档：
 
 ```rust
+use ambi::{Agent, AgentState};
+use std::sync::Arc;
+
 let agent = Agent::make(config).await?
-    .on_evict(|evicted: Vec<Arc<Message>>| {
-        for msg in &evicted {
-            // 存数据库、打日志、汇总等
-            println!("被驱逐：{:?}", msg);
-        }
+    .on_evict(|state: &AgentState, evicted: Vec<Arc<Message>>| {
+        let session_id = &state.session_id;
+        // 注意：在持有 AgentState 写锁时执行。
+        // 对于 I/O 密集型操作，应使用 tokio::spawn：
+        tokio::spawn(async move {
+            // 将被驱逐的消息持久化到数据库
+        });
     });
 ```
 

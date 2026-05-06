@@ -19,13 +19,20 @@ If you use `current_thread` runtime:
 
 `Agent::make()` will panic because `spawn_blocking` requires a multi-thread runtime.
 
-## `Agent::with_custom_engine` is different
+## `LLMEngineConfig::Custom` is different
 
-`with_custom_engine()` wraps a `Box<dyn LLMEngineTrait>` directly and does **not** call `spawn_blocking`. It works with any Tokio runtime:
+`LLMEngineConfig::Custom` wraps a `Box<dyn LLMEngineTrait>` directly and does **not** call `spawn_blocking`. It works with any Tokio runtime:
 
 ```rust
-let agent = Agent::with_custom_engine(Box::new(MockEngine))?; // no spawn_blocking
+use ambi::{Agent, LLMEngineConfig};
+
+let agent = Agent::make(
+    LLMEngineConfig::Custom(Box::new(MockEngine))
+).await?; // no spawn_blocking
 ```
+
+> **Note:** The old `Agent::with_custom_engine()` is deprecated since v0.3.3.
+> Use `Agent::make(LLMEngineConfig::Custom(backend)).await` instead.
 
 ## GPU acceleration
 

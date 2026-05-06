@@ -56,13 +56,21 @@ impl LLMEngineTrait for MockEngine {
 
 ## Using the custom engine
 
+Pass your engine via the `LLMEngineConfig::Custom` variant:
+
 ```rust
-let agent = Agent::with_custom_engine(Box::new(MockEngine {
-    reply: "Hello, I'm a mock.".into(),
-}))?;
+use ambi::{Agent, LLMEngineConfig};
+
+let agent = Agent::make(
+    LLMEngineConfig::Custom(Box::new(MockEngine {
+        reply: "Hello, I'm a mock.".into(),
+    }))
+).await?;
 ```
 
-Note: `with_custom_engine` is synchronous – it doesn't need `spawn_blocking` because there's no model file to load. This also means it works in `current_thread` Tokio runtimes.
+This is the **recommended** approach since v0.3.3. The old `Agent::with_custom_engine()` is deprecated.
+
+Note: `LLMEngineConfig::Custom` is synchronous – it doesn't need `spawn_blocking` because there's no model file to load. This also means it works in `current_thread` Tokio runtimes.
 
 ## Using a custom engine in tests
 
@@ -71,10 +79,9 @@ Mock engines are useful for deterministic testing of tool logic:
 ```rust
 #[tokio::test]
 async fn test_tool_calls() {
-    let engine = MockEngine {
+    let agent = Agent::make(LLMEngineConfig::Custom(Box::new(MockEngine {
         reply: "Tell me the weather[TOOL_CALL]{\"name\":\"get_weather\",\"args\":{\"city\":\"Tokyo\"}}[/TOOL_CALL]".into(),
-    };
-    let agent = Agent::with_custom_engine(Box::new(engine))?;
+    }))).await?;
     // ... test your tools
 }
 ```
@@ -84,6 +91,7 @@ async fn test_tool_calls() {
 By default, Ambi uses `cl100k_base` (tiktoken). If your model uses a different tokenizer, swap it:
 
 ```rust
+use ambi::llm::{LLMEngine, LLMEngineConfig};
 use ambi::llm::tokenizer::TokenizerTrait;
 
 struct MyTokenizer;
@@ -95,8 +103,11 @@ impl TokenizerTrait for MyTokenizer {
 }
 
 // After creating the engine:
-let engine = LLMEngine::from_custom(Box::new(my_engine))?;
+let engine = LLMEngine::load(LLMEngineConfig::Custom(Box::new(my_engine)))?;
 let engine = engine.with_custom_tokenizer(MyTokenizer);
 ```
+
+> **Note:** The old `LLMEngine::from_custom()` method is deprecated since v0.3.3.
+> Use `LLMEngine::load(LLMEngineConfig::Custom(backend))` instead.
 
 This affects context eviction accuracy. An inaccurate tokenizer may evict too early or too late.

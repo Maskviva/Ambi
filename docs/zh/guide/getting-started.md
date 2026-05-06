@@ -27,7 +27,7 @@ GPU 加速子特性：`cuda`、`vulkan`、`metal`、`rocm`——只能选一个�
 ambi = { version = "0.3", features = ["llama-cpp", "cuda"] }
 ```
 
-## 2. 最小 Agent——10 行代码
+## 2. 最小 Agent
 
 ```rust
 use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
@@ -46,8 +46,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .preamble("你是一个乐于助人的助手。")
         .template(ambi::ChatTemplateType::Chatml);
 
-    let state = AgentState::new_shared();
-    let runner = ChatRunner;
+    let state = AgentState::new_shared("session-001");
+    let runner = ChatRunner::default();
 
     let reply = runner.chat(&agent, &state, "你好！").await?;
     println!("{}", reply);
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`AgentState::new_shared()` 是一个便捷构造器，内部用 `Arc<RwLock<>>` 包装状态以实现线程安全。`Agent::make` 加载引擎（llama.cpp 时在阻塞线程上加载），然后用 builder 链式配置。`ChatRunner` 执行完整的 ReAct 循环。
+`AgentState::new_shared("...")` 是一个便捷构造器，内部用 `Arc<RwLock<>>` 包装状态以实现线程安全。`session_id` 参数为分布式追踪和 KV Cache 槽位分配建立物理唯一性。`Agent::make` 加载引擎（llama.cpp 时在阻塞线程上加载），然后用 builder 链式配置。`ChatRunner::default()` 创建默认最大并发为 5 的运行器。
 
 ## 3. 切换引擎
 

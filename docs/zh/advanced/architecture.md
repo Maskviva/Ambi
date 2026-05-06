@@ -7,23 +7,35 @@
 这是最重要的设计决策。`Agent` 是只读蓝图。`AgentState` 是可变的对话记忆。
 
 ```
-Agent（只读，Arc 共享）
+Agent（只读，所有字段 Arc 包装 → 零成本克隆）
 ├── LLMEngine              → 模型后端
 ├── AgentConfig            → 系统提示词、模板、驱逐策略
 ├── tools_def / tool_map   → 注册的工具和定义
 ├── tool_parser            → 从 LLM 输出中解析工具调用的方式
+├── cached_tool_prompt     → 预渲染的工具指令字符串
 ├── formatter_factory      → 流式输出清理方式
-└── on_evict_handler       → 消息被驱逐时的回调
+└── on_evict_handler       → 消息被驱逐时的回调（接收 &AgentState）
 
 AgentState（可变，RwLock）
-└── ChatHistory            → (Message, token_count) 列表
+├── session_id             → 唯一会话标识（KV Cache 槽位分配、分布式追踪）
+├── dynamic_context        → 易变会话数据（RAG 结果、环境变量）
+├── chat_history           → 纯 FIFO 队列（仅 User / Assistant / Tool）
+└── extensions             → anymap2 用于自定义状态
 ```
+
+**v0.3.3 的架构变化：**
+
+- `session_id` 加入 `AgentState`，支持高并发环境下的分布式追踪和 KV Cache 槽位分配。
+- `dynamic_context` 加入 `AgentState`，将易变数据（RAG、时间戳）与 `AgentConfig` 中的静态 `system_prompt` 分离。
+- `Message::System` 从 `ChatHistory` 中移除。历史记录现在是 `User`、`Assistant`、`Tool` 事件的纯 FIFO 队列，将上下文驱逐算法简化为 O(1) 截断。
+- Agent 字段（`config`、`cached_tool_prompt`）用 `Arc` 包装，确保跨 Tokio 任务的真正零成本克隆。
 
 这样设计的好处：
 
 - **一个 Agent 蓝图，多组对话** —— clone 只是 Arc 引用计数 +1
 - **Agent 构建只做一次** —— 包括阻塞式的引擎加载
 - **State 可以序列化** —— 对话可以持久化和恢复
+- **最大化 KV Cache 命中率** —— 系统提示词（静态）永远不会从头部被驱逐
 
 ## ReAct 循环
 
@@ -35,8 +47,9 @@ AgentState（可变，RwLock）
     ▼
 1. 把用户消息推进 ChatHistory
 2. 构建 LLMRequest
-   ├─ system_prompt + tool prompt
-   ├─ 过滤后的历史
+   ├─ system_prompt + dynamic_context
+   ├─ cached_tool_prompt
+   ├─ 过滤后的历史（仅 User/Assistant/Tool）
    ├─ 渲染好的 prompt 字符串
    └─ 提取的图片
     │
@@ -51,13 +64,28 @@ AgentState（可变，RwLock）
     ├─ 没有工具 → 返回文本
     │
     └─ 有工具 →
-       5. 并行执行（.buffered(5)），每个工具有超时
+       5. 并行执行（.buffered(max_concurrency)），每个工具有超时
        6. 工具结果作为 Tool 消息推回 ChatHistory
-       7. 驱逐检查（超预算则 FIFO 弹出）
+       7. 驱逐检查（纯 FIFO，无 System 消息），回调 on_evict(state, msgs)
        8. 回到步骤 3（最多 max_iterations 次）
 ```
 
 步骤 3-8 重复，直到没有工具调用、或者达到 `max_iterations`。
+
+### ChatRunner 并发控制
+
+`ChatRunner` 现在持有 `maximum_concurrency` 字段（默认 5，通过 `ChatRunner::default()` 创建），
+可以对并行 ghost 工具执行进行灵活的速率限制：
+
+```rust
+use ambi::ChatRunner;
+
+// 默认：最多 5 个并发工具执行
+let runner = ChatRunner::default();
+
+// 自定义限制
+let runner = ChatRunner::new(3);
+```
 
 ## 模板渲染
 

@@ -87,7 +87,10 @@ use ambi::tool;
     name = "search_docs",
     description = "Search documentation",
     params = {
-        "query": { "type": "string", "description": "Search term" }
+        "query": {
+            "type": "string",
+            "description": "Search term"
+        }
     }
 )]
 async fn search_docs(query: String) -> Result<String, ToolErr> {
@@ -95,7 +98,9 @@ async fn search_docs(query: String) -> Result<String, ToolErr> {
 }
 ```
 
-The macro generates the `Tool` implementation, the argument struct, and the `ToolDefinition` automatically.
+The `params(...)` attribute lets you inject LLM-facing descriptions directly into function arguments,
+providing richer routing hints to the model. The macro generates the `Tool` implementation, the
+argument struct, and the `ToolDefinition` automatically.
 
 ## Per-tool configuration
 
@@ -122,13 +127,24 @@ Non-idempotent tools are **never retried**. If a "send email" tool times out aft
 
 ## Parallel execution
 
-All tool calls from a single LLM response run concurrently, with a max concurrency of 5:
+All tool calls from a single LLM response run concurrently. The maximum concurrency is configured
+on `ChatRunner` (defaults to 5 via `ChatRunner::default()`):
+
+```rust
+use ambi::ChatRunner;
+
+// Default concurrency (5)
+let runner = ChatRunner::default();
+
+// Custom concurrency limit
+let runner = ChatRunner::new(3);
+```
 
 ```rust
 // pseudocode from tool_handler.rs
 stream::iter(calls)
     .map(|(name, args, id)| run_tool(name, args, id))
-    .buffered(5)
+    .buffered(runner.maximum_concurrency)
 ```
 
 If the LLM calls three tools, they execute in parallel. If one of them is slow, the others are not blocked.

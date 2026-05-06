@@ -55,13 +55,21 @@ impl LLMEngineTrait for MockEngine {
 
 ## 使用自定义引擎
 
+通过 `LLMEngineConfig::Custom` 变体传入你的引擎：
+
 ```rust
-let agent = Agent::with_custom_engine(Box::new(MockEngine {
-    reply: "你好，我是 Mock。".into(),
-}))?;
+use ambi::{Agent, LLMEngineConfig};
+
+let agent = Agent::make(
+    LLMEngineConfig::Custom(Box::new(MockEngine {
+        reply: "你好，我是 Mock。".into(),
+    }))
+).await?;
 ```
 
-注意 `with_custom_engine` 是同步的 —— 不需要 `spawn_blocking`，因为没有模型文件要加载。这也意味着它在 `current_thread` Tokio 运行时下也能工作。
+这是 **v0.3.3 起推荐** 的方式。旧的 `Agent::with_custom_engine()` 方法已废弃。
+
+注意 `LLMEngineConfig::Custom` 是同步的 —— 不需要 `spawn_blocking`，因为没有模型文件要加载。这也意味着它在 `current_thread` Tokio 运行时下也能工作。
 
 ## 用自定义引擎做测试
 
@@ -70,10 +78,9 @@ Mock 引擎在测试工具逻辑时很有用：
 ```rust
 #[tokio::test]
 async fn test_tool_calls() {
-    let engine = MockEngine {
+    let agent = Agent::make(LLMEngineConfig::Custom(Box::new(MockEngine {
         reply: "查天气[TOOL_CALL]{\"name\":\"get_weather\",\"args\":{\"city\":\"东京\"}}[/TOOL_CALL]".into(),
-    };
-    let agent = Agent::with_custom_engine(Box::new(engine))?;
+    }))).await?;
     // ... 测试你的工具
 }
 ```
@@ -83,6 +90,7 @@ async fn test_tool_calls() {
 默认用 `cl100k_base`（tiktoken）。如果你的模型用不同的分词器，可以换：
 
 ```rust
+use ambi::llm::{LLMEngine, LLMEngineConfig};
 use ambi::llm::tokenizer::TokenizerTrait;
 
 struct MyTokenizer;
@@ -94,8 +102,11 @@ impl TokenizerTrait for MyTokenizer {
 }
 
 // 创建引擎之后：
-let engine = LLMEngine::from_custom(Box::new(my_engine))?;
+let engine = LLMEngine::load(LLMEngineConfig::Custom(Box::new(my_engine)))?;
 let engine = engine.with_custom_tokenizer(MyTokenizer);
 ```
+
+> **注意：** 旧的 `LLMEngine::from_custom()` 方法自 v0.3.3 起已废弃。
+> 请使用 `LLMEngine::load(LLMEngineConfig::Custom(backend))` 替代。
 
 这会影响上下文驱逐的准确性。不准的分词器可能导致过早或过晚驱逐。

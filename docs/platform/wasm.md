@@ -8,6 +8,7 @@ Ambi compiles to WASM32 and runs in browsers. This is a first-class target, not 
 |---------|--------|------|
 | llama.cpp inference | Yes | **No** (compile-time blocked) |
 | OpenAI API | Yes | Yes (browser fetch) |
+| **Streaming API** | Yes (tokio) | **Yes** (native `fetch` + `ReadableStream`) |
 | Custom engine | Yes | Yes |
 | `spawn_blocking` | Thread pool | Inline execution |
 | `Send + Sync` bounds | Enforced | Relaxed (single-threaded) |
@@ -58,6 +59,26 @@ wasm-bindgen-futures = "0.4"
 
 Note: `rt-multi-thread` is not needed (and won't compile) for WASM.
 
+## Streaming in the browser
+
+The OpenAI provider for WASM uses native `fetch` and `ReadableStream` APIs for true streaming.
+The same `chat_stream()` API works identically in the browser:
+
+```rust
+use futures::StreamExt;
+
+let mut stream = runner.chat_stream(&agent, &state, "Tell me a story").await?;
+while let Some(chunk) = stream.next().await {
+    if let Ok(text) = chunk {
+        // append to DOM
+    }
+}
+```
+
+No special WASM polyfills are needed – the `runtime` module automatically swaps Tokio
+internals for WASM-compatible alternatives.
+
 ## Example
 
-See `examples/webassembly.rs` for a complete browser-ready setup.
+See [`examples/webAssembly`](https://github.com/maskviva/ambi/tree/main/examples/webAssembly)
+for a complete browser-ready setup with a UI toggle demoing real-time streaming text generation.

@@ -43,12 +43,29 @@ let agent = Agent::make(config).await?
 Agent 把历史存在 `AgentState` 里。每次 `chat()` 都会追加用户消息和助手回复，下一轮自动带上上下文。
 
 ```rust
-let state = AgentState::new_shared();
+let state = AgentState::new_shared("session-001");
 
 runner.chat(&agent, &state, "我叫小明。").await?;
 // 下一轮它记得"小明"
 runner.chat(&agent, &state, "我叫什么名字？").await?;
 // -> "你叫小明"
+```
+
+### session_id
+
+每个 `AgentState` 都带有一个唯一的 `session_id`，为高并发环境下的分布式追踪和 KV Cache 槽位分配提供支持：
+
+```rust
+let state = AgentState::new_shared("user-42-conversation-3");
+```
+
+### 动态上下文
+
+易变数据（RAG 结果、时间戳、环境变量）通过 `AgentState` 注入，不会污染静态的 `system_prompt`：
+
+```rust
+state.write().await.set_dynamic_context("相关文档：...");
+state.write().await.append_dynamic_context("用户语言：zh-CN");
 ```
 
 ### 清空历史
@@ -62,16 +79,39 @@ ChatRunner::clear_history(&agent, &mut state_lock);
 
 这会同时清空对话消息和引擎内部上下文（本地模型会清 KV Cache）。
 
+### ChatHistory 查询方法
+
+```rust
+let hist = &state.read().await.chat_history;
+
+// 搜索包含关键词的消息
+let results = hist.search_by_keyword("天气");
+
+// 获取最近一条用户消息
+if let Some(msg) = hist.last_user_message() {
+    // ...
+}
+
+// 获取最近一条助手回复
+if let Some(msg) = hist.last_assistant_message() {
+    // ...
+}
+```
+
 ## 克隆友好
 
 `Agent` 的所有内部字段都用 `Arc` 包装，克隆只是引用计数 +1。可以一个 Agent 蓝图跑几百个对话：
 
 ```rust
-let agent = Agent::make(config).await?;
+let agent = Agent::make(config).await?.preamble("你是一个助手。");
+let state = AgentState::new_shared("多轮对话");
+let runner = ChatRunner::default();
+
 for _ in 0..100 {
     let agent = agent.clone();
+    let state_clone = Arc::clone(&state);
     tokio::spawn(async move {
-        runner.chat(&agent, &state, "你好").await;
+        let _ = runner.chat(&agent, &state_clone, "你好").await;
     });
 }
 ```
@@ -88,6 +128,10 @@ for _ in 0..100 {
 - `MaxIterationsReached` —— ReAct 循环超限
 
 ```rust
+let agent = Agent::make(config).await?.preamble("你是一个助手。");
+let state = AgentState::new_shared("错误处理");
+let runner = ChatRunner::default();
+
 match runner.chat(&agent, &state, "你好").await {
     Ok(reply) => println!("{}", reply),
     Err(AmbiError::ToolError(msg)) => eprintln!("工具执行失败：{}", msg),

@@ -19,6 +19,15 @@ while let Some(chunk) = stream.next().await {
 
 The stream yields `Result<String>` chunks. In a terminal you'd print each chunk; in a web server you'd send them as SSE or WebSocket frames.
 
+## WASM browser streaming
+
+Ambi's streaming API works natively in the browser via the WASM target. The OpenAI provider
+uses the browser's native `fetch` and `ReadableStream` APIs – no special polyfills required.
+The same `chat_stream()` code runs both natively and in the browser.
+
+See [`examples/webAssembly`](https://github.com/maskviva/ambi/tree/main/examples/webAssembly)
+for a live browser demo with a UI toggle.
+
 ## How streaming interacts with tools
 
 When the agent is in streaming mode and a tool call happens, the tool result blocks are also pushed into the stream as formatted strings. Your client sees something like:

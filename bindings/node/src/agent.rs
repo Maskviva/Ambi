@@ -30,7 +30,6 @@ impl JsAgentState {
         }
     }
 
-
     /// Wipe the conversation history.
     #[napi]
     pub async fn clear_history(&self) {

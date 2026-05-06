@@ -19,6 +19,14 @@ while let Some(chunk) = stream.next().await {
 
 每次 `yield` 的是 `Result<String>`。终端里直接打印就行了；Web 服务里可以转成 SSE 或 WebSocket 帧发到前端。
 
+## WASM 浏览器流式传输
+
+Ambi 的流式 API 在 WASM 目标下原生支持浏览器环境。OpenAI 提供者使用浏览器原生的 `fetch` 和 `ReadableStream` API——
+不需要额外的 polyfill。同样的 `chat_stream()` 代码在原生和浏览器下都适用。
+
+参考 [`examples/webAssembly`](https://github.com/maskviva/ambi/tree/main/examples/webAssembly)
+查看包含 UI 切换演示的在线浏览器示例。
+
 ## 流模式与工具的交互
 
 流模式下，工具调用的结果块也会被推到流里。你看到的可能是：
