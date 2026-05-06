@@ -25,9 +25,11 @@ async fn main() -> Result<()> {
         .with_eviction_strategy(EvictionStrategy {
             max_safe_tokens: 50,
         })
-        // Step 4: Inject a closure to handle messages that are evicted from the context window.
-        // This is highly useful for archiving old conversations to a Vector Database for long-term RAG memory.
-        .on_evict(|evicted_messages| {
+        // Step 4: Inject a closure to handle messages evicted from the context window.
+        // This is very useful for archiving old conversations into a vector database for long-term RAG memory.
+        // Here, agent_state is explicitly ignored. If multiple instances of agent_state exist in your scenario,
+        // it is recommended to pass them to distinguish between different agent_states.
+        .on_evict(|_agent_state, evicted_messages| {
             println!("\n[System Notification] Context window limit reached.");
             println!(
                 "[Memory Manager] Evicting {} old messages...",

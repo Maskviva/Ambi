@@ -30,11 +30,11 @@ mod tests {
             min_keep: 1,
         };
 
-        let chat_runner = ChatRunner;
+        let chat_runner = ChatRunner::default();
 
         let agent = Agent::make(LLMEngineConfig::Llama(cfg)).await.unwrap();
 
-        let agent_state = AgentState::new_shared();
+        let agent_state = AgentState::new_shared("test-session-id");
 
         let mut res_stream = chat_runner
             .chat_stream(&agent, &agent_state, "What is my name?")

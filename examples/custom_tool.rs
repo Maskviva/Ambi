@@ -87,14 +87,14 @@ async fn main() -> ambi::error::Result<()> {
         .with_standard_formatting();
 
     // Initialize a thread-safe, shared agent state via the new_shared() convenience constructor.
-    let state = AgentState::new_shared();
-    let chat_runner = ChatRunner;
+    let agent_state = AgentState::new_shared("session-id");
+    let chat_runner = ChatRunner::default();
 
     println!("User: What is 12345 multiplied by 67890?");
 
     // The agent will automatically call the Rust tool, get the answer, and reply!
     let response = chat_runner
-        .chat(&agent, &state, "What is 12345 multiplied by 67890?")
+        .chat(&agent, &agent_state, "What is 12345 multiplied by 67890?")
         .await?;
     println!("Assistant: {}", response);
 

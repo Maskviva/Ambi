@@ -2,7 +2,7 @@
 use ambi::error::Result;
 use ambi::llm::LLMEngineTrait;
 use ambi::types::LLMRequest;
-use ambi::Agent;
+use ambi::{Agent, LLMEngineConfig};
 use async_trait::async_trait;
 
 // Step 1: Define the configuration and state structure for your custom engine.
@@ -50,8 +50,10 @@ async fn main() -> Result<()> {
         _api_key: "secret-api-key".to_string(),
     });
 
-    // Step 5: Mount your custom engine to the Agent using `Agent::with_custom_engine`.
-    let _agent = Agent::with_custom_engine(my_engine)?.preamble(system_prompt);
+    // Step 5: Mount your custom engine to the Agent using `LLMEngineConfig::Custom`.
+    let _agent = Agent::make(LLMEngineConfig::Custom(my_engine))
+        .await?
+        .preamble(system_prompt);
 
     // The agent is now fully functional and backed by your proprietary model engine.
     Ok(())

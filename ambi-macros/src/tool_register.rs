@@ -1,7 +1,8 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::parse::Parser;
-use syn::{Ident, ItemFn, Meta, Type};
+use std::collections::HashMap;
+use syn::parse::{Parse, ParseStream, Parser};
+use syn::{Ident, ItemFn, LitStr, Meta, Token, Type};
 
 pub(crate) struct ToolConfig {
     pub(crate) name_override: Option<String>,
@@ -9,6 +10,7 @@ pub(crate) struct ToolConfig {
     pub(crate) timeout_secs: Option<u64>,
     pub(crate) max_retries: Option<usize>,
     pub(crate) is_idempotent: bool,
+    pub(crate) param_descriptions: HashMap<String, String>,
 }
 
 pub(crate) struct ArgInfo {
@@ -17,6 +19,32 @@ pub(crate) struct ArgInfo {
     pub(crate) name_str: String,
     pub(crate) json_type: String,
     pub(crate) is_required: bool,
+    pub(crate) description: String,
+}
+
+struct ParamDescriptions {
+    map: HashMap<String, String>,
+}
+
+impl Parse for ParamDescriptions {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut map = HashMap::new();
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+
+            let value: LitStr = input.parse()?;
+            map.insert(key.to_string(), value.value());
+
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            }
+        }
+        if !input.is_empty() {
+            return Err(input.error("unexpected extra tokens in params(...)"));
+        }
+        Ok(ParamDescriptions { map })
+    }
 }
 
 pub(crate) fn parse_tool_config(attr: TokenStream) -> Result<ToolConfig, syn::Error> {
@@ -26,13 +54,14 @@ pub(crate) fn parse_tool_config(attr: TokenStream) -> Result<ToolConfig, syn::Er
         timeout_secs: None,
         max_retries: None,
         is_idempotent: false,
+        param_descriptions: Default::default(),
     };
 
     if attr.is_empty() {
         return Ok(config);
     }
 
-    let parser = syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated;
+    let parser = syn::punctuated::Punctuated::<Meta, Token![,]>::parse_terminated;
     let parsed = parser.parse(attr)?;
 
     for meta in parsed {
@@ -42,6 +71,10 @@ pub(crate) fn parse_tool_config(attr: TokenStream) -> Result<ToolConfig, syn::Er
                 if path.is_ident("is_idempotent") || path.is_ident("idempotent") {
                     config.is_idempotent = true;
                 }
+            }
+            Meta::List(list) if list.path.is_ident("params") => {
+                let parsed_params: ParamDescriptions = list.parse_args()?;
+                config.param_descriptions = parsed_params.map;
             }
             _ => {}
         }
@@ -117,7 +150,10 @@ pub(crate) fn extract_doc_description(func: &ItemFn) -> String {
     desc
 }
 
-pub(crate) fn extract_args_info(func: &ItemFn) -> Result<Vec<ArgInfo>, syn::Error> {
+pub(crate) fn extract_args_info(
+    func: &ItemFn,
+    param_descriptions: &HashMap<String, String>,
+) -> Result<Vec<ArgInfo>, syn::Error> {
     let mut args = Vec::new();
     for input in &func.sig.inputs {
         let pat_type = match input {
@@ -141,12 +177,18 @@ pub(crate) fn extract_args_info(func: &ItemFn) -> Result<Vec<ArgInfo>, syn::Erro
         let ty = (*pat_type.ty).clone();
         let name_str = ident.to_string();
         let (json_type, is_required) = extract_type_info(&ty);
+        let description = param_descriptions
+            .get(&name_str)
+            .cloned()
+            .unwrap_or_default();
+
         args.push(ArgInfo {
             ident,
             ty,
             name_str,
             json_type,
             is_required,
+            description,
         });
     }
     Ok(args)
@@ -160,14 +202,14 @@ pub(crate) fn generate_tool_impl(
     output_ty: proc_macro2::TokenStream,
 ) -> TokenStream {
     let fn_ident = func.sig.ident.clone();
-    let struct_name = fn_ident.clone();
+    let struct_name = quote::format_ident!("{}Tool", pascal_case(&fn_ident.to_string()));
     let args_struct_name = quote::format_ident!("{}Args", pascal_case(&fn_ident.to_string()));
     let impl_name = quote::format_ident!("__ambi_tool_impl_{}", fn_ident);
     func.sig.ident = impl_name.clone();
 
     let tool_name = config.name_override.unwrap_or_else(|| fn_ident.to_string());
 
-    let (arg_idents, arg_types, arg_names_str, arg_json_types, required_args) =
+    let (arg_idents, arg_types, arg_names_str, arg_json_types, arg_descriptions, required_args) =
         destructure_args(&args_info);
 
     let timeout_token = config
@@ -204,7 +246,12 @@ pub(crate) fn generate_tool_impl(
                     parameters: ::serde_json::json!({
                         "type": "object",
                         "properties": {
-                            #( #arg_names_str: { "type": #arg_json_types } ),*
+                            #(
+                                #arg_names_str: {
+                                    "type": #arg_json_types,
+                                    "description": #arg_descriptions
+                                },
+                            )*
                         },
                         "required":[ #( #required_args ),* ]
                     }),
@@ -229,14 +276,16 @@ fn destructure_args(
 ) -> (
     Vec<&Ident>,
     Vec<&Type>,
-    Vec<&String>,
-    Vec<&String>,
-    Vec<&String>,
+    Vec<&String>, // name_str
+    Vec<&String>, // json_type
+    Vec<&String>, // description
+    Vec<&String>, // required (name)
 ) {
     let mut idents = Vec::with_capacity(args.len());
     let mut types = Vec::with_capacity(args.len());
     let mut names = Vec::with_capacity(args.len());
     let mut json_types = Vec::with_capacity(args.len());
+    let mut descriptions = Vec::with_capacity(args.len());
     let mut required = Vec::with_capacity(args.len());
 
     for a in args {
@@ -244,11 +293,12 @@ fn destructure_args(
         types.push(&a.ty);
         names.push(&a.name_str);
         json_types.push(&a.json_type);
+        descriptions.push(&a.description);
         if a.is_required {
             required.push(&a.name_str);
         }
     }
-    (idents, types, names, json_types, required)
+    (idents, types, names, json_types, descriptions, required)
 }
 
 fn pascal_case(s: &str) -> String {
@@ -306,7 +356,7 @@ fn extract_type_info(ty: &Type) -> (String, bool) {
                 "bool" => "boolean",
                 "Vec" | "HashSet" | "BTreeSet" | "slice" | "Array" => "array",
                 "HashMap" | "BTreeMap" | "Value" => "object",
-                _ => "string",
+                _ => "object",
             }
             .to_string();
 

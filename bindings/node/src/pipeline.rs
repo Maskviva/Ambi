@@ -63,7 +63,7 @@ impl JsChatRunner {
         state: &JsAgentState,
         prompt: String,
     ) -> napi::Result<String> {
-        ChatRunner
+        ChatRunner::default()
             .chat(&agent.inner, &state.inner, &prompt)
             .await
             .map_err(|e| napi::Error::from_reason(e.to_string()))
@@ -100,7 +100,7 @@ impl JsChatRunner {
         let state_clone = state.inner.clone();
 
         tokio::spawn(async move {
-            let stream = match ChatRunner
+            let stream = match ChatRunner::default()
                 .chat_stream(&agent_clone, &state_clone, &prompt)
                 .await
             {
@@ -143,7 +143,7 @@ impl JsChatRunner {
         input: Vec<JsContentPart>,
     ) -> napi::Result<String> {
         let parts: Vec<ContentPart> = input.into_iter().map(|p| p.into()).collect();
-        ChatRunner
+        ChatRunner::default()
             .execute(&agent.inner, &state.inner, parts)
             .await
             .map_err(|e| napi::Error::from_reason(e.to_string()))
@@ -169,7 +169,7 @@ impl JsChatRunner {
         let state_clone = state.inner.clone();
 
         tokio::spawn(async move {
-            let stream = match ChatRunner
+            let stream = match ChatRunner::default()
                 .execute_stream(&agent_clone, &state_clone, parts)
                 .await
             {

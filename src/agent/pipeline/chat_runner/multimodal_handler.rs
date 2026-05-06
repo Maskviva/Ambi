@@ -52,6 +52,7 @@ pub(crate) struct RunCtx<'a> {
 /// # Handler Implementation
 impl ChatRunner {
     pub(crate) async fn chat_multimodal(
+        &self,
         agent: &Agent,
         state: &Arc<RwLock<AgentState>>,
         parts: Vec<ContentPart>,
@@ -84,10 +85,18 @@ impl ChatRunner {
             evict_handler: &agent.on_evict_handler,
         };
 
-        Self::run_loop(&ctx, &agent.llm_engine, &accessor, ExecutionMode::Sync).await
+        Self::run_loop(
+            &ctx,
+            &agent.llm_engine,
+            self.maximum_concurrency,
+            &accessor,
+            ExecutionMode::Sync,
+        )
+        .await
     }
 
     pub(crate) async fn chat_multimodal_stream(
+        &self,
         agent: &Agent,
         state: &Arc<RwLock<AgentState>>,
         parts: Vec<ContentPart>,
@@ -106,6 +115,8 @@ impl ChatRunner {
             .to_string(),
         )?;
 
+        let maximum_concurrency = self.maximum_concurrency;
+
         let handle = spawn(async move {
             let tx_out_clone = tx_out.clone();
             let accessor = StateManager(&state_clone);
@@ -120,7 +131,7 @@ impl ChatRunner {
                     template: &agent_clone.config.template,
                     max_iterations: agent_clone.config.max_iterations,
                     system_prompt: &agent_clone.config.system_prompt,
-                    eviction_strategy: agent_clone.config.eviction_strategy,
+                    eviction_strategy: agent_clone.config.eviction_strategy.clone(),
                 },
                 loop_tooling: LoopTooling {
                     tools_def: &agent_clone.tools_def,
@@ -138,7 +149,15 @@ impl ChatRunner {
                 formatter_factory: &agent_clone.formatter_factory,
             };
 
-            if let Err(e) = Self::run_loop(&ctx, &agent_clone.llm_engine, &accessor, mode).await {
+            if let Err(e) = Self::run_loop(
+                &ctx,
+                &agent_clone.llm_engine,
+                maximum_concurrency,
+                &accessor,
+                mode,
+            )
+            .await
+            {
                 let _ = tx_out_clone.send(Err(e)).await;
             }
         });
@@ -158,7 +177,8 @@ impl ChatRunner {
         });
 
         #[cfg(target_arch = "wasm32")]
-        drop(handle);
+        #[allow(clippy::let_underscore_future)]
+        let _ = handle;
 
         Ok(Box::pin(ReceiverStream::new(rx_out)))
     }
@@ -166,6 +186,7 @@ impl ChatRunner {
     pub(crate) async fn run_loop(
         ctx: &RunCtx<'_>,
         engine: &LLMEngine,
+        maximum_concurrency: usize,
         accessor: &StateManager<'_>,
         mode: ExecutionMode<'_>,
     ) -> Result<String> {
@@ -284,6 +305,7 @@ impl ChatRunner {
             let tool_calls = match Self::handle_tool_calls(
                 accessor,
                 engine,
+                maximum_concurrency,
                 Arc::clone(ctx.loop_tooling.tool_map),
                 tool_calls_with_ids,
                 ctx.tx_out.cloned(),

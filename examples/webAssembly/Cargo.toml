@@ -21,9 +21,13 @@ ambi = { path = "../../../Ambi", features = ["openai-api"] }
 # WASM-compatible asynchronous runtime
 tokio = { version = "1.52.1", features = ["sync", "macros"] }
 
-# JS interoperability and future bridges
+# Stream trait extension for consuming async streams in WASM
+futures = "0.3"
+
+# JS interoperability, types, and future bridges
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
 gloo-timers = { version = "0.4.0", features = ["futures"] }
 
 # Crucial: Provides system entropy (randomness) derived from JavaScript's Math.random,

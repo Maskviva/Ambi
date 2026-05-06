@@ -1,6 +1,6 @@
 // src/agent/core/builder.rs
 
-use super::Agent;
+use super::{Agent, ExtensionsMap};
 use crate::agent::processor::{PassThroughFormatter, StandardStreamFormatter};
 use crate::agent::tool::DefaultToolParser;
 use crate::config::{AgentConfig, EvictionStrategy};
@@ -9,8 +9,40 @@ use crate::llm::{LLMEngine, LLMEngineConfig, LLMEngineTrait};
 use crate::runtime::spawn_blocking;
 use crate::types::{ChatTemplate, Message, StreamFormatter, Tool, ToolCallParser, ToolDefinition};
 
+use crate::agent::core::history::ChatHistory;
+use crate::AgentState;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::RwLock;
+
+impl AgentState {
+    /// Creates a fresh, empty conversation state.
+    pub fn new(session_id: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            dynamic_context: String::new(),
+            chat_history: ChatHistory::new(),
+            extensions: ExtensionsMap::new(),
+        }
+    }
+
+    /// Convenience: returns a thread-shared, lock-protected AgentState,
+    /// ready to be passed directly into Pipeline::execute / execute_stream.
+    #[cfg_attr(target_arch = "wasm32", allow(clippy::arc_with_non_send_sync))]
+    pub fn new_shared(session_id: impl Into<String>) -> Arc<RwLock<Self>> {
+        Arc::new(RwLock::new(Self::new(session_id)))
+    }
+
+    /// Get a mutable reference to the expanded mapping.
+    pub fn extensions_mut(&mut self) -> &mut ExtensionsMap {
+        &mut self.extensions
+    }
+
+    /// Get an immutable reference to the extended mapping.
+    pub fn extensions(&self) -> &ExtensionsMap {
+        &self.extensions
+    }
+}
 
 impl Agent {
     /// # Constructors
@@ -25,7 +57,25 @@ impl Agent {
         Ok(Self::init_agent(engine))
     }
 
-    /// Creates an Agent utilizing a user-implemented custom LLM backend.
+    /// Creates an Agent using a custom LLM backend via the `LLMEngineConfig::Custom` variant.
+    ///
+    /// # Deprecation
+    /// This method is deprecated. Use `Agent::make(LLMEngineConfig::Custom(backend)).await` instead.
+    ///
+    /// # Migration
+    ///
+    /// ```rust,ignore
+    /// // Old (deprecated):
+    /// let agent = Agent::with_custom_engine(Box::new(MyEngine))?;
+    ///
+    /// // New (recommended):
+    /// let agent = Agent::make(LLMEngineConfig::Custom(Box::new(MyEngine))).await?;
+    /// ```
+    #[deprecated(
+        since = "0.3.3",
+        note = "use `Agent::make(LLMEngineConfig::Custom(backend)).await` instead"
+    )]
+    #[allow(deprecated)]
     pub fn with_custom_engine(custom_backend: Box<dyn LLMEngineTrait>) -> Result<Self> {
         let engine = LLMEngine::from_custom(custom_backend)?;
         Ok(Self::init_agent(engine))
@@ -34,19 +84,21 @@ impl Agent {
     /// Creates an Agent from an already-initialized Engine (Arc).
     ///
     /// This is the primitive constructor; `init_agent` and `make` both go through this.
+    #[cfg_attr(target_arch = "wasm32", allow(clippy::arc_with_non_send_sync))]
     pub fn from_engine(llm_engine: Arc<LLMEngine>) -> Self {
         Self {
             llm_engine,
-            config: AgentConfig::default(),
+            config: Arc::new(AgentConfig::default()),
             tools_def: Arc::new(Vec::new()),
             tool_map: Arc::new(HashMap::new()),
             tool_parser: Arc::new(DefaultToolParser::make()),
             on_evict_handler: None,
             formatter_factory: Arc::new(|| Box::new(PassThroughFormatter)),
-            cached_tool_prompt: String::new(),
+            cached_tool_prompt: Arc::new(String::new()),
         }
     }
 
+    #[cfg_attr(target_arch = "wasm32", allow(clippy::arc_with_non_send_sync))]
     pub(super) fn init_agent(engine: LLMEngine) -> Self {
         Self::from_engine(Arc::new(engine))
     }
@@ -54,19 +106,19 @@ impl Agent {
     /// # Core Configuration
     /// Sets the persistent global system prompt (instructions) for the Agent.
     pub fn preamble(mut self, system_prompt: &str) -> Self {
-        self.config.system_prompt = system_prompt.to_string();
+        Arc::make_mut(&mut self.config).system_prompt = system_prompt.to_string();
         self
     }
 
     /// Configures the chat template format (e.g., ChatML, Llama3) used to compile prompts.
     pub fn template<T: Into<ChatTemplate>>(mut self, template_source: T) -> Self {
-        self.config.template = template_source.into();
+        Arc::make_mut(&mut self.config).template = template_source.into();
         self
     }
 
     /// Customizes the contextual memory limits and eviction behavior.
     pub fn with_eviction_strategy(mut self, strategy: EvictionStrategy) -> Self {
-        self.config.eviction_strategy = strategy;
+        Arc::make_mut(&mut self.config).eviction_strategy = strategy;
         self
     }
 
@@ -111,10 +163,10 @@ impl Agent {
 
     fn update_cached_tool_prompt(&mut self) {
         if self.tools_def.is_empty() {
-            self.cached_tool_prompt = String::new();
+            self.cached_tool_prompt = Arc::new(String::new());
         } else {
             let tools_json = serde_json::to_string(&*self.tools_def).unwrap_or_default();
-            self.cached_tool_prompt = self.tool_parser.format_instruction(&tools_json);
+            self.cached_tool_prompt = Arc::new(self.tool_parser.format_instruction(&tools_json));
         }
     }
 
@@ -159,22 +211,28 @@ impl Agent {
     }
 
     /// Registers a callback that triggers whenever conversation history is evicted
-    /// due to token capacity limits. Useful for logging or persisting cold data.
+    /// due to token capacity limits.
+    ///
+    /// **⚠️ Performance Warning:**
+    /// This callback executes synchronously while holding the `AgentState` write lock.
+    /// Do NOT perform blocking I/O (like writing to a database or file) directly inside this closure.
+    /// Instead, extract the required handles (e.g., from `state.extensions()`) and `tokio::spawn`
+    /// an asynchronous task to handle the evicted messages.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn on_evict<F>(mut self, handler: F) -> Self
     where
-        F: Fn(Vec<Arc<Message>>) + Send + Sync + 'static,
+        F: Fn(&AgentState, Vec<Arc<Message>>) + Send + Sync + 'static,
     {
         self.on_evict_handler = Some(Arc::new(handler));
         self
     }
 
-    /// Registers a callback that triggers whenever conversation history is evicted
-    /// due to token capacity limits. Useful for logging or persisting cold data.
+    /// Registers a callback that triggers whenever conversation history is evicted.
+    /// (See native documentation for performance warnings regarding blocking operations).
     #[cfg(target_arch = "wasm32")]
     pub fn on_evict<F>(mut self, handler: F) -> Self
     where
-        F: Fn(Vec<Arc<Message>>) + 'static,
+        F: Fn(&AgentState, Vec<Arc<Message>>) + 'static,
     {
         self.on_evict_handler = Some(Arc::new(handler));
         self

@@ -18,10 +18,10 @@ mod tests {
             top_p: 0.9,
         };
 
-        let chat_runner = ChatRunner;
+        let chat_runner = ChatRunner::default();
 
         let agent = Agent::make(LLMEngineConfig::OpenAI(cfg)).await.unwrap();
-        let agent_state = AgentState::new_shared();
+        let agent_state = AgentState::new_shared("test-session-id");
 
         let res = chat_runner
             .chat(&agent, &agent_state, "who are you")

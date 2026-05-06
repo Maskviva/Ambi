@@ -50,11 +50,11 @@ pub mod wasm_api {
             let agent = Agent::make(LLMEngineConfig::OpenAI(config))
                 .await
                 .map_err(|e| JsValue::from_str(&format!("Agent initialization error: {}", e)))?
-                .preamble("You are a smart AI running directly inside a Web Browser using WebAssembly! Please remember my context if I tell you.")
-                .with_standard_formatting();
+                .preamble("You are a smart AI running directly inside a Web Browser using WebAssembly! Please remember my context if I tell you.");
+            // .with_standard_formatting();
 
             // 3. Initialize the persistent memory state via the thread-safe new_shared() constructor
-            let state = AgentState::new_shared();
+            let state = AgentState::new_shared("session_id");
 
             Ok(AmbiSession { agent, state })
         }
@@ -74,6 +74,66 @@ pub mod wasm_api {
                 .map_err(|e| JsValue::from_str(&format!("Chat execution error: {}", e)))?;
 
             Ok(response)
+        }
+
+        /// Sends a prompt and streams the response back through JavaScript callbacks.
+        ///
+        /// Each content chunk is forwarded to `on_chunk` as soon as it arrives from
+        /// the LLM engine. When the stream completes, `on_done` is called with the
+        /// assembled full response.
+        ///
+        /// In JavaScript, you invoke this via:
+        /// ```js
+        /// session.chat_stream(
+        ///   "Hello!",
+        ///   (chunk) => {
+        ///     // append chunk to UI in real-time
+        ///   },
+        ///   (full)  => {
+        ///     // re-enable the send button etc.
+        ///   },
+        /// );
+        /// ```
+        pub async fn chat_stream(
+            &self,
+            prompt: String,
+            on_chunk: js_sys::Function,
+            on_done: js_sys::Function,
+        ) -> Result<(), JsValue> {
+            use futures::StreamExt;
+
+            let runner = ChatRunner;
+
+            // Obtain the async stream of response chunks
+            let mut stream = runner
+                .chat_stream(&self.agent, &self.state, &prompt)
+                .await
+                .map_err(|e| JsValue::from_str(&format!("Chat stream error: {}", e)))?;
+
+            let mut full_response = String::new();
+
+            // Consume the stream one chunk at a time
+            while let Some(chunk) = stream.next().await {
+                match chunk {
+                    Ok(text) => {
+                        full_response.push_str(&text);
+                        // Forward each text fragment to the JS callback in real-time
+                        let this = JsValue::null();
+                        let _ = on_chunk.call1(&this, &JsValue::from_str(&text));
+                    }
+                    Err(e) => {
+                        let this = JsValue::null();
+                        let _ =
+                            on_chunk.call1(&this, &JsValue::from_str(&format!("\n[Error: {}]", e)));
+                    }
+                }
+            }
+
+            // Signal completion and pass the complete response text
+            let this = JsValue::null();
+            let _ = on_done.call1(&this, &JsValue::from_str(&full_response));
+
+            Ok(())
         }
 
         /// Manually clears the agent's short-term memory (context history) from JavaScript.

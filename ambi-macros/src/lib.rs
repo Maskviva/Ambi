@@ -18,7 +18,7 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
         config.description.clone()
     };
 
-    let args_info = match tool_register::extract_args_info(&func) {
+    let args_info = match tool_register::extract_args_info(&func, &config.param_descriptions) {
         Ok(info) => info,
         Err(e) => return e.to_compile_error().into(),
     };
@@ -27,3 +27,23 @@ pub fn tool(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     tool_register::generate_tool_impl(func, config, description, args_info, output_ty)
 }
+
+// #[proc_macro_attribute]
+// pub fn agent(attr: TokenStream, item: TokenStream) -> TokenStream {
+//     unimplemented!()
+// }
+
+// #[derive(Agent)]
+// struct MyAgentConfig {
+//     // 引擎配置：类型为 LLMEngineConfig，用户显式提供
+//     engine: LLMEngineConfig,
+//     // 系统提示词
+//     #[agent(preamble)]
+//     prompt: String,
+//     // 工具列表（可以是任何实现了 Tool 的 trait object 的容器）
+//     #[agent(tools)]
+//     tools: Vec<Arc<dyn DynTool>>,
+//     // 可选的 chat template
+//     #[agent(template)]
+//     template: Option<ChatTemplate>,
+// }

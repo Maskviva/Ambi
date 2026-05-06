@@ -24,11 +24,12 @@ pub struct JsAgentState {
 impl JsAgentState {
     /// Start with a blank slate.
     #[napi(constructor)]
-    pub fn new() -> Self {
+    pub fn new(session_id: String) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(AgentState::new())),
+            inner: Arc::new(RwLock::new(AgentState::new(session_id))),
         }
     }
+
 
     /// Wipe the conversation history.
     #[napi]

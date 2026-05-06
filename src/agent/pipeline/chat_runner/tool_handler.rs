@@ -33,7 +33,8 @@ impl ChatRunner {
     pub(crate) async fn handle_tool_calls(
         state_accessor: &StateManager<'_>,
         engine: &crate::llm::LLMEngine,
-        tool_map: Arc<HashMap<String, Arc<DynToolObj>>>, // <-- Applied Type Alias
+        maximum_concurrency: usize,
+        tool_map: Arc<HashMap<String, Arc<DynToolObj>>>,
         calls: Vec<(String, serde_json::Value, String)>,
         tx_out: Option<Sender<Result<String>>>,
     ) -> Result<Vec<(String, String, String)>> {
@@ -89,7 +90,7 @@ impl ChatRunner {
                     }
                 }
             })
-            .buffered(5);
+            .buffered(maximum_concurrency);
 
         // Collect the results of all concurrent tools and record them in the history database separately
         while let Some(res) = stream.next().await {

@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
     });
 
     // Step 4: Instantiate the ChatRunner. This is used to distinguish which `ChatRunner` it comes from.
-    let chat_runner = ChatRunner;
+    let chat_runner = ChatRunner::default();
 
     // Step 5: Instantiate the Agent using the builder pattern.
     // We pass the engine configuration, set the chat template, and inject the system prompt.
@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
         .preamble(system_prompt);
 
     // Step 6: Initialize a thread-safe, shared agent state via the new_shared() convenience constructor.
-    let agent_state = AgentState::new_shared();
+    let agent_state = AgentState::new_shared("session-id");
 
     // Step 7: Initiate a synchronous chat request to the LLM.
     // The agent will process the prompt, interact with the model, and return the final string.

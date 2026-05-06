@@ -56,17 +56,17 @@ async fn main() -> Result<()> {
     // Step 3: Instantiate the ChatRunner.
     // This acts as the pipeline orchestrator responsible for managing the
     // ReAct loop (LLM <-> Tool interactions).
-    let chat_runner = ChatRunner;
+    let chat_runner = ChatRunner::default();
 
     // Step 4: Instantiate the Agent using the builder pattern.
     // Thanks to the zero-alias macro design, we can seamlessly mount the tool
     // by simply passing its original function name (`get_weather`).
-    let agent = Agent::make(engine_config).await?.tool(get_weather)?;
+    let agent = Agent::make(engine_config).await?.tool(GetWeatherTool)?;
 
     // Step 5: Initialize a thread-safe, shared agent state via the new_shared() convenience constructor.
     // `AgentState` is decoupled from the `Agent` itself. This architecture allows
     // a single read-only Agent instance to handle multiple concurrent conversations safely.
-    let agent_state = AgentState::new_shared();
+    let agent_state = AgentState::new_shared("session-id");
 
     // Step 6: Execute the chat pipeline.
     // The agent will autonomously decide to invoke the `check_city_weather` tool

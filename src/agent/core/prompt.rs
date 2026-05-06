@@ -14,18 +14,22 @@ impl Agent {
         cached_tool_prompt: &str,
         tool_tags: (String, String),
     ) -> LLMRequest {
-        let mut system_prompts_buffer = Vec::new();
-        let mut filtered_history = Vec::new();
-        let mut extracted_images = Vec::new();
+        let mut final_system_prompt = system_prompt.to_string();
 
-        if !system_prompt.is_empty() {
-            system_prompts_buffer.push(system_prompt.to_string());
+        if !state.dynamic_context.is_empty() {
+            if !final_system_prompt.is_empty() {
+                final_system_prompt.push_str("\n\n");
+            }
+            final_system_prompt.push_str(&state.dynamic_context);
         }
+
+        let mut filtered_history = Vec::with_capacity(state.chat_history.len());
+        let mut extracted_images = Vec::new();
 
         for (msg, _) in state.chat_history.all() {
             match &**msg {
-                Message::System { content } => {
-                    system_prompts_buffer.push(content.clone());
+                Message::System { .. } => {
+                    log::warn!("Ignored a System message found in ChatHistory. Please use `AgentState::dynamic_context` instead.");
                 }
                 Message::User { content } => {
                     for part in content {
@@ -40,8 +44,6 @@ impl Agent {
                 }
             }
         }
-
-        let final_system_prompt = system_prompts_buffer.join("\n\n");
 
         let formatted_prompt = Self::build_prompt(
             &final_system_prompt,
@@ -69,7 +71,7 @@ impl Agent {
     ) -> String {
         let mut prompt = String::with_capacity(2048);
 
-        // --- Render Preamble (System + Tools) ---
+        // --- Render Preamble (System/Dynamic Context + Tools) ---
         if !system_prompt.is_empty() || !tool_content.is_empty() {
             prompt.push_str(&tpl.system_prefix);
             prompt.push_str(system_prompt);
@@ -120,7 +122,7 @@ impl Agent {
                     prompt.push_str(content);
                     prompt.push_str(&tpl.assistant_suffix);
                 }
-                _ => {} // System Message already handled above
+                _ => {} // Fallback for safely ignored elements
             }
         }
 

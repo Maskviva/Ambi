@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     });
 
     // Step 3: Instantiate the ChatRunner. This is used to distinguish which `ChatRunner` it comes from.
-    let chat_runner = ChatRunner;
+    let chat_runner = ChatRunner::default();
 
     // Step 4: Instantiate the Agent.
     // Mount the local engine, apply the ChatML template, and set the system prompt.
@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
         .preamble(system_prompt);
 
     // Step 5: Initialize a thread-safe, shared agent state via the new_shared() convenience constructor.
-    let agent_state = AgentState::new_shared();
+    let agent_state = AgentState::new_shared("session-id");
 
     // Step 6: Send a chat message to the local model.
     // The framework handles prompt construction, context management, and inference.

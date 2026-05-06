@@ -27,13 +27,16 @@ pub enum LLMEngineConfig {
     /// Configuration for local Llama.cpp inference.
     #[cfg(feature = "llama-cpp")]
     Llama(LlamaEngineConfig),
+    /// Configuration for custom engine.
+    Custom(Box<dyn LLMEngineTrait>),
 }
 
 /// # Engine Traits
 /// The foundational driver contract for LLM engines.
 ///
 /// Any third-party model backend wishing to integrate with the Ambi framework
-/// simply needs to implement this Trait and inject it via `Agent::with_custom_engine`.
+/// simply needs to implement this Trait and inject it via
+/// `Agent::make(LLMEngineConfig::Custom(backend)).await`.
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait LLMEngineTrait: SendSync {
@@ -110,10 +113,31 @@ impl LLMEngine {
                     tokenizer: Arc::new(DefaultTokenizer::make()?),
                 })
             }
+            LLMEngineConfig::Custom(backend) => Ok(LLMEngine {
+                backend,
+                tokenizer: Arc::new(DefaultTokenizer::make()?),
+            }),
         }
     }
 
-    /// Injects a custom implemented large model backend.
+    /// Injects a custom LLM backend via the `LLMEngineConfig::Custom` variant.
+    ///
+    /// # Deprecation
+    /// This method is deprecated. Use `LLMEngine::load(LLMEngineConfig::Custom(backend))` instead.
+    ///
+    /// # Migration
+    ///
+    /// ```rust,ignore
+    /// // Old (deprecated):
+    /// let engine = LLMEngine::from_custom(Box::new(MyEngine))?;
+    ///
+    /// // New (recommended):
+    /// let engine = LLMEngine::load(LLMEngineConfig::Custom(Box::new(MyEngine)))?;
+    /// ```
+    #[deprecated(
+        since = "0.3.3",
+        note = "use `LLMEngine::load(LLMEngineConfig::Custom(backend))` instead"
+    )]
     pub fn from_custom(backend: Box<dyn LLMEngineTrait>) -> Result<Self> {
         Ok(Self {
             backend,

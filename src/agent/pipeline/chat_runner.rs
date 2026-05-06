@@ -19,7 +19,10 @@ use tokio_stream::wrappers::ReceiverStream;
 pub(crate) struct StateManager<'a>(&'a Arc<RwLock<AgentState>>);
 
 /// The default chat runner implementing the full LLM-Tooling event loop.
-pub struct ChatRunner;
+pub struct ChatRunner {
+    /// The maximum number of concurrent requests allowed.
+    pub maximum_concurrency: usize,
+}
 
 impl Pipeline for ChatRunner {
     async fn execute(
@@ -28,8 +31,8 @@ impl Pipeline for ChatRunner {
         state: &Arc<RwLock<AgentState>>,
         input: Vec<ContentPart>,
     ) -> Result<String> {
-        Self::validate_multimodal_input(agent, &input)?;
-        Self::chat_multimodal(agent, state, input).await
+        self.validate_multimodal_input(agent, &input)?;
+        self.chat_multimodal(agent, state, input).await
     }
 
     async fn execute_stream(
@@ -38,12 +41,25 @@ impl Pipeline for ChatRunner {
         state: &Arc<RwLock<AgentState>>,
         input: Vec<ContentPart>,
     ) -> Result<Pin<Box<ReceiverStream<Result<String>>>>> {
-        Self::validate_multimodal_input(agent, &input)?;
-        Self::chat_multimodal_stream(agent, state, input).await
+        self.validate_multimodal_input(agent, &input)?;
+        self.chat_multimodal_stream(agent, state, input).await
+    }
+}
+
+impl Default for ChatRunner {
+    fn default() -> Self {
+        Self::new(5)
     }
 }
 
 impl ChatRunner {
+    /// Creates a new chat runner
+    pub fn new(maximum_concurrency: usize) -> Self {
+        Self {
+            maximum_concurrency,
+        }
+    }
+
     /// # Public Helpers
     /// Synchronous chat execution helper for pure text prompts.
     pub async fn chat(
@@ -86,7 +102,13 @@ impl ChatRunner {
     }
 
     /// # Internal Validators
-    fn validate_multimodal_input(agent: &Agent, parts: &[ContentPart]) -> Result<()> {
+    fn validate_multimodal_input(&self, agent: &Agent, parts: &[ContentPart]) -> Result<()> {
+        if self.maximum_concurrency == 0 {
+            return Err(AmbiError::PipelineError(
+                "Maximum concurrency must be greater than 0".into(),
+            ));
+        }
+
         let has_image = parts.iter().any(|p| matches!(p, ContentPart::Image { .. }));
         if has_image && !agent.llm_engine.supports_multimodal() {
             Err(AmbiError::EngineError(

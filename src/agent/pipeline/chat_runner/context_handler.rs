@@ -98,7 +98,7 @@ impl<'a> StateManager<'a> {
         if count > 0 {
             log::debug!("Context truncation: Evicted {} messages.", count);
             if let Some(h) = handler {
-                h(evicted_msgs);
+                h(&lock, evicted_msgs);
             }
         }
         Ok(count)
