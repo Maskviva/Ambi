@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-# Changelog
+## [0.3.5] — 2026-05-05
+
+> **Note:** 0.3.4 is deprecated due to unlocalized Chinese text and uncommented
+> code in the `crate_agent_in_macrp` example.
+
+### Bug Fixes
+
+- **Localize `crate_agent_in_macrp` example** — All Chinese doc comments, inline
+  comments, and user-facing prompt strings have been translated to English.
+  The Chinese debug prompt "你试试你的add工具能不能用，我在调试。" is replaced
+  with a concrete English query "What is 114514 plus 8080?".
+
+- **Register example in Cargo.toml** — Added missing `[[example]]` entry for
+  `crate_agent_in_macrp` with required features `["openai-api", "macro"]`,
+  enabling it to be built via `cargo run --example crate_agent_in_macrp --features ambi/macro`.
+
+### Documentation
+
+- Added step-by-step English documentation comments (Steps 1–5) covering API key
+  setup, engine configuration, builder instantiation, chat execution, and result
+  output in the `crate_agent_in_macrp` example.
+
+### Maintenance
+
+- Version bump: 0.3.4 (deprecated) → 0.3.5.
 
 ## [0.3.4] — 2026-05-05
 

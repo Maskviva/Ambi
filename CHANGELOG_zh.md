@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] — 2026-05-05
+
+> **注：** 0.3.4 因未本地化中文文本且未注释而被弃用
+> “crate_agent_in_macrp”示例中的代码。
+
+### 漏洞修复
+
+- **本地化“crate_agent_in_macrp”示例** — 所有中文文档评论，内嵌
+  评论和面向用户的提示字符串已被翻译成英文。
+  中文调试提示词“你试试你的add工具能不能用，我在调试。“被替换
+  并提出一个具体的英文问题：“什么是114514加8080？”
+
+- **Cargo.toml 中的寄存器示例** — 新增缺失的 '[[example]]' 条目
+  'crate_agent_in_macrp' 具有必要功能 '[“openai-api”， “macro”]'，
+  使它能够通过“货运航线——示例crate_agent_in_macrp——具有双向/宏功能”来建造。
+
+### 文档
+
+- 新增了逐步的英文文档注释（步骤1–5），涵盖API密钥
+  设置、引擎配置、构建器实例化、聊天执行和结果
+  在“crate_agent_in_macrp”示例中输出。
+
+### 维护
+
+- 版本提升：0.3.4（弃用版）→0.3.5。
+
+## [0.3.4] — 2026-05-05
+
+### 新功能
+
+- **'#[agent]' 派生宏** — 一种新的声明式属性宏，消除了
+  通过生成完整的代理界面（“代理”、“代理状态”、“管道”）来实现样板模板。
+  来自一个单位结构。支持工具绑定、自定义流水线注入、会话ID
+  赋值，并暴露了“chat（）”、“chat_stream（）”、“execute（）”、“set_dynamic_context（）”，
+  以及直接在生成的立面上进行“clear_history（）”方法。重新导出后通过
+  “ambi：：宏：：agent”。
+
+- **OpenAI 配置构建器** — 'OpenAIEngineConfig：：create（api_key， model_name）' 提供
+  一个带有确定性默认值的简明入口点，辅以“.base_url（）”，
+  '.temp（）'， '.top_p（）' 构建方法用于灵活覆盖。
+
+- **'Agent：：with_dyn_tools（）'** — 新方法接受“Vec<Arc<T>>”注册
+  预构、弧形包裹的动态工具，无需手动定义提取。
+
+### ⚙改进
+
+- **宏模块重新导出** — 'ambi_macros'现已重新导出为'ambi：：macros'，
+  提供一个干净的“ambi：：macros：：{tool， agent}'导入路径。
+- **“动态链接”功能** — 新货运功能，支持动态链接
+  llama.cpp后端。
+- **VitePress 文档配置** — 完整的文档网站配置，包含英文和
+  中文本地搜索、侧边栏导航和GitHub社交链接。
+
+### 示例
+
+- **'crate_agent_in_macrp.rs'** — 演示“#[agent]'宏的端到端使用
+  通过自定义的“AddTool”，将“builder（）”→“preamble（）”→“build（）”串联起来。
+- 更新了'custom_tool_in_macro.rs'导入路径为'ambi：：macros：：tool'。
+
+### 维护
+
+- 版本提升至 0.3.4。
+- 更新了“双宏/README”文档。
+
 ## [0.3.3] - 2026-05-06
 
 ### Changed

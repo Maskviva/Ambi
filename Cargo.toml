@@ -6,7 +6,7 @@ members = [
 
 [package]
 name = "ambi"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 description = "A flexible, multi-backend, customizable AI agent framework, entirely based on Rust."
 license = "Apache-2.0"
@@ -119,3 +119,7 @@ required-features = ["openai-api"]
 [[example]]
 name = "memory_eviction_handler"
 required-features = ["openai-api"]
+
+[[example]]
+name = "crate_agent_in_macrp"
+required-features = ["openai-api", "macro"]
