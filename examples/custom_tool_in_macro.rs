@@ -1,7 +1,7 @@
 // You must enable the macro feature before starting (e.g., `cargo run --features ambi/macro`)
 use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
 use ambi::types::ToolErr;
-use ambi::{tool, Agent, AgentState, ChatRunner, LLMEngineConfig};
+use ambi::{macros::tool, Agent, AgentState, ChatRunner, LLMEngineConfig};
 use anyhow::Result;
 use serde::Serialize;
 

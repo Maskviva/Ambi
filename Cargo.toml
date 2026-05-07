@@ -6,7 +6,7 @@ members = [
 
 [package]
 name = "ambi"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 description = "A flexible, multi-backend, customizable AI agent framework, entirely based on Rust."
 license = "Apache-2.0"
@@ -36,6 +36,7 @@ cuda = ["llama-cpp", "llama-cpp-2/cuda", "llama-cpp-sys-2/cuda"]
 vulkan = ["llama-cpp", "llama-cpp-2/vulkan", "llama-cpp-sys-2/vulkan"]
 metal = ["llama-cpp", "llama-cpp-2/metal", "llama-cpp-sys-2/metal"]
 rocm = ["llama-cpp", "llama-cpp-2/rocm", "llama-cpp-sys-2/rocm"]
+dynamic-link = ["llama-cpp", "llama-cpp-2/dynamic-link", "llama-cpp-sys-2/dynamic-link"]
 
 macro = ["dep:ambi-macros"]
 

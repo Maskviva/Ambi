@@ -65,7 +65,7 @@ pub mod wasm_api {
         /// In JavaScript, you invoke this via:
         /// `const reply = await session.chat("Hello!");`
         pub async fn chat(&self, prompt: String) -> Result<String, JsValue> {
-            let runner = ChatRunner;
+            let runner = ChatRunner::default();
 
             // Reuse the existing `self.agent` and `self.state` to maintain context
             let response = runner
@@ -102,7 +102,7 @@ pub mod wasm_api {
         ) -> Result<(), JsValue> {
             use futures::StreamExt;
 
-            let runner = ChatRunner;
+            let runner = ChatRunner::default();
 
             // Obtain the async stream of response chunks
             let mut stream = runner

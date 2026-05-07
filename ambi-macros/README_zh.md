@@ -73,10 +73,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .template(ambi::ChatTemplateType::Chatml);
 
     // 3. 创建共享状态
-    let state = Arc::new(Mutex::new(AgentState::new()));
+    let state = Arc::new(Mutex::new(AgentState::new_shared("session_id")));
 
     // 4. 运行聊天流水线
-    let runner = ChatRunner;
+    let runner = ChatRunner::default();
     let response = runner.chat(&agent, &state, "你好，世界！").await?;
     println!("{}", response);
 

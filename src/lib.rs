@@ -105,7 +105,7 @@ pub mod types;
 mod runtime;
 
 #[cfg(feature = "macro")]
-pub use ambi_macros::tool;
+pub use ambi_macros as macros;
 
 pub use agent::core::{Agent, AgentState};
 pub use agent::pipeline::chat_runner::ChatRunner;

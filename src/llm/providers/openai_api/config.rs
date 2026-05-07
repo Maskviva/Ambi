@@ -16,13 +16,10 @@ use serde::Deserialize;
 /// ```rust
 /// use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
 ///
-/// let config = OpenAIEngineConfig {
-///     api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),
-///     base_url: "[https://api.openai.com/v1](https://api.openai.com/v1)".to_string(),
-///     model_name: "gpt-4o".to_string(),
-///     temp: 0.7,
-///     top_p: 0.95,
-/// };
+/// // Using the convenience builder pattern:
+/// let config = OpenAIEngineConfig::create("your-api-key".to_string(), "gpt-4o")
+///     .temp(0.7)
+///     .top_p(0.95);
 /// ```
 #[derive(Debug, Deserialize, Clone)]
 pub struct OpenAIEngineConfig {
@@ -39,7 +36,7 @@ pub struct OpenAIEngineConfig {
 }
 
 impl OpenAIEngineConfig {
-    /// Validates the API parameters before networking.
+    /// Validates the API parameters before executing network requests.
     pub fn validate(&self) -> crate::error::Result<()> {
         if self.api_key.trim().is_empty() {
             return Err(AmbiError::EngineError(
@@ -52,5 +49,40 @@ impl OpenAIEngineConfig {
             ));
         }
         Ok(())
+    }
+
+    /// A convenience constructor to quickly initialize the configuration with required fields.
+    ///
+    /// **Defaults:**
+    /// - `base_url`: "https://api.openai.com/v1"
+    /// - `temp`: 0.0 (Deterministic output)
+    /// - `top_p`: 0.0 (Deterministic output)
+    pub fn create(api_key: String, model_name: &str) -> Self {
+        Self {
+            api_key,
+            base_url: "https://api.openai.com/v1".to_string(),
+            model_name: model_name.to_string(),
+            temp: 0.0,
+            top_p: 0.0,
+        }
+    }
+
+    /// Builder method to override the default API base URL.
+    /// Highly useful for connecting to local engines (e.g., vLLM) or alternative proxy endpoints.
+    pub fn base_url(mut self, base_url: String) -> Self {
+        self.base_url = base_url;
+        self
+    }
+
+    /// Builder method to set the sampling temperature (0.0 to 2.0).
+    pub fn temp(mut self, temp: f32) -> Self {
+        self.temp = temp;
+        self
+    }
+
+    /// Builder method to set the nucleus sampling threshold.
+    pub fn top_p(mut self, top_p: f32) -> Self {
+        self.top_p = top_p;
+        self
     }
 }

@@ -78,10 +78,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .template(ambi::ChatTemplateType::Chatml);
 
     // 3. Create a shared state
-    let state = Arc::new(Mutex::new(AgentState::new()));
+    let state = Arc::new(Mutex::new(AgentState::new_shared("session_id")));
 
     // 4. Run the chat pipeline
-    let runner = ChatRunner;
+    let runner = ChatRunner::default();
     let response = runner.chat(&agent, &state, "Hello, world!").await?;
     println!("{}", response);
 

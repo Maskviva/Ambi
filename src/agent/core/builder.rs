@@ -153,6 +153,17 @@ impl Agent {
         Ok(self)
     }
 
+    /// Register multiple custom tools with the agent at the same time.
+    pub fn with_dyn_tools<T: Tool + 'static>(mut self, tools: Vec<Arc<T>>) -> Result<Self> {
+        for tool in tools {
+            let def = tool.definition();
+            Arc::make_mut(&mut self.tools_def).push(def.clone());
+            Arc::make_mut(&mut self.tool_map).insert(def.name, tool);
+        }
+        self.update_cached_tool_prompt();
+        Ok(self)
+    }
+
     /// Injects a custom parser to define how the LLM outputs tool-call requests.
     pub fn with_tool_parser<P: ToolCallParser + 'static>(mut self, parser: P) -> Self {
         self.tool_parser = Arc::new(parser);
