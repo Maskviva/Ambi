@@ -45,8 +45,8 @@
 //!         .with_standard_formatting();
 //!
 //!     // 3. Initialize Conversation State
-//!     let state = Arc::new(RwLock::new(AgentState::new()));
-//!     let runner = ChatRunner;
+//!     let state = AgentState::new_shared("session-id");
+//!     let runner = ChatRunner::default();
 //!
 //!     // 4. Execute the pipeline
 //!     let response = runner.chat(&agent, &state, "Hello, world!").await?;
