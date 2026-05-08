@@ -19,6 +19,7 @@ use tokio_stream::wrappers::ReceiverStream;
 pub(crate) struct StateManager<'a>(&'a Arc<RwLock<AgentState>>);
 
 /// The default chat runner implementing the full LLM-Tooling event loop.
+#[derive(Clone)]
 pub struct ChatRunner {
     /// The maximum number of concurrent requests allowed.
     pub maximum_concurrency: usize,

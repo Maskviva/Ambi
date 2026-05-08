@@ -61,4 +61,15 @@ For most custom requirements, you don't need to replace the entire pipeline – 
 - **Tool parsing** → custom `ToolCallParser` (see [Tool Parser](/advanced/tool-parser))
 - **Engine behavior** → custom `LLMEngineTrait` (see [Custom Engine](/advanced/custom-engine))
 
+### Pre-built pipelines
+
+The [`ambi-pipelines`](/extensions/ambi-pipelines) extension crate offers production-ready pipeline implementations:
+
+| Pipeline | Description |
+|---|---|
+| `StandardRagPipeline` | Retrieval-Augmented Generation with token-aware context packing |
+| `SelfConsistencyPipeline` | Parallel Chain-of-Thought with majority voting |
+| `BfsBeamSearchPipeline` | Tree of Thoughts with BFS beam search |
+| `ReflexionPipeline` | Actor-Evaluator loop with persistent critique memory |
+
 If you still need a completely custom loop, copy `ChatRunner`'s structure and modify what you need.

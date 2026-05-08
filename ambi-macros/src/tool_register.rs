@@ -1,3 +1,5 @@
+//! Implementation of the `#[tool]` proc-macro: config parsing, argument introspection, and code generation.
+
 use proc_macro::TokenStream;
 use quote::quote;
 use std::collections::HashMap;

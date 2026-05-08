@@ -66,22 +66,24 @@ OpenAIEngineConfig {
 
 ```rust
 LlamaEngineConfig {
-    model_path: String,
-    max_tokens: u32,       // 4096
-    buffer_size: u32,      // 32
-    use_gpu: bool,
-    n_gpu_layers: u32,     // how many layers to offload to GPU
-    n_ctx: u32,            // context size
-    n_tokens: u32,         // tokens to predict
-    n_seq_max: u32,        // 1 for single sequence
-    penalty_last_n: u32,
-    penalty_repeat: f32,
-    penalty_freq: f32,
-    penalty_present: f32,
-    temp: f32,
-    top_p: f32,
-    seed: u32,
-    min_keep: u32,
+    model_path: String,              // path to .gguf file
+    mmproj_path: Option<String>,     // external vision projector (e.g., mmproj-model-f16.gguf)
+    integrated_vision: bool,         // whether the model has native vision capabilities
+    max_tokens: i32,                 // max tokens to predict
+    buffer_size: usize,              // batch buffer size for piece decoding
+    use_gpu: bool,                   // offload layers to GPU
+    n_gpu_layers: u32,               // how many layers to offload to GPU
+    n_ctx: u32,                      // context window size
+    n_tokens: usize,                 // batch size for prompt processing
+    n_seq_max: i32,                  // max sequences in a batch
+    penalty_last_n: i32,             // past tokens to consider for penalties
+    penalty_repeat: f32,             // repetition penalty
+    penalty_freq: f32,               // frequency penalty
+    penalty_present: f32,            // presence penalty
+    temp: f32,                       // temperature (0.0 – 2.0)
+    top_p: f32,                      // nucleus sampling threshold
+    seed: u32,                       // RNG seed for deterministic generation
+    min_keep: usize,                 // min-keep sampling boundary
 }
 ```
 
@@ -102,7 +104,7 @@ ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
 | `vulkan`    | Vulkan acceleration                               | + Vulkan SDK                   |
 | `metal`     | Apple Metal acceleration                          | + Metal framework               |
 | `rocm`      | AMD ROCm acceleration                             | + ROCm                         |
-| `macro`     | `#[tool]` attribute macro with `params(...)` support | `ambi-macros`                  |
+| `macro`     | `#[tool]` and `#[agent]` attribute macros (see [ambi-macros](/extensions/ambi-macros)) | `ambi-macros`                  |
 | `mtmd`      | Multimodal support for Llama (VLM)                | + `base64`                     |
 
 You cannot enable more than one GPU backend at once – there's a compile-time `compile_error!` guard for this.

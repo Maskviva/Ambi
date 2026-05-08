@@ -7,14 +7,14 @@ This page explains how Ambi works under the hood. You don't need to know all of 
 This is the most important design decision. `Agent` is a read-only blueprint. `AgentState` is mutable conversation memory.
 
 ```
-Agent (read-only, all fields Arc-wrapped → zero-cost clone)
-├── LLMEngine              → the model backend
-├── AgentConfig            → system prompt, template, eviction strategy
-├── tools_def / tool_map   → registered tools and their definitions
-├── tool_parser            → how tool calls are parsed from LLM output
-├── cached_tool_prompt     → pre-rendered tool instruction string
-├── formatter_factory      → how stream output is cleaned up
-└── on_evict_handler       → callback for evicted messages (receives &AgentState)
+Agent (read-only, all fields pub(crate) / Arc-wrapped → zero-cost clone)
+├── llm_engine (Arc<LLMEngine>)  → model backend (pub(crate))
+├── config (Arc<AgentConfig>)    → system prompt, template, eviction strategy
+├── tools_def / tool_map         → registered tools and their definitions
+├── tool_parser                  → how tool calls are parsed from LLM output
+├── cached_tool_prompt           → pre-rendered tool instruction string
+├── formatter_factory            → how stream output is cleaned up
+└── on_evict_handler             → callback for evicted messages (receives &AgentState)
 
 AgentState (mutable, RwLock)
 ├── session_id             → unique conversation identifier (KV cache slotting, tracing)
@@ -23,16 +23,8 @@ AgentState (mutable, RwLock)
 └── extensions             → anymap2 for custom state
 ```
 
-**What changed in v0.3.3:**
-
-- `session_id` was added to `AgentState` for distributed tracing and KV cache slotting in highly
-  concurrent environments.
-- `dynamic_context` was added to `AgentState` to handle volatile data (RAG, timestamps) separately
-  from the static `system_prompt` in `AgentConfig`.
-- `Message::System` was purged from `ChatHistory`. The history is now a pure FIFO queue of `User`,
-  `Assistant`, and `Tool` events, streamlining the context eviction algorithm to O(1) truncation.
-- Agent fields (`config`, `cached_tool_prompt`) are wrapped in `Arc` for truly zero-cost cloning
-  across Tokio tasks.
+Note: Agent fields are `pub(crate)` — external code composes with Agent through the public
+API (`chat()`, `chat_stream()`, etc.) rather than directly accessing internal fields.
 
 This separation means:
 
@@ -108,8 +100,8 @@ Steps 3–8 repeat until either: no tool calls are produced, or `max_iterations`
 
 ### ChatRunner concurrency control
 
-`ChatRunner` now holds `maximum_concurrency` (default 5 via `ChatRunner::default()`), allowing
-flexible rate-limiting for parallel ghost-tool executions. You can create a custom runner:
+`ChatRunner` holds `maximum_concurrency` (default 5 via `ChatRunner::default()`), allowing
+flexible rate-limiting for parallel tool executions. You can create a custom runner:
 
 ```rust
 use ambi::ChatRunner;
@@ -147,10 +139,21 @@ The engine receives the rendered prompt string. OpenAI engines additionally rece
 `Pipeline` is the trait that defines the execution contract. `ChatRunner` is the built-in implementation, but you can write your own:
 
 ```rust
+// Native (Send + Sync)
+pub trait Pipeline: Send + Sync {
+    fn execute(
+        &self, agent: &Agent, state: &Arc<RwLock<AgentState>>, input: Vec<ContentPart>
+    ) -> impl Future<Output = Result<String>> + Send;
+
+    fn execute_stream(
+        &self, agent: &Agent, state: &Arc<RwLock<AgentState>>, input: Vec<ContentPart>
+    ) -> impl Future<Output = Result<Pin<Box<ReceiverStream<Result<String>>>>>> + Send;
+}
+
+// WASM (no Send + Sync bounds)
+#[cfg(target_arch = "wasm32")]
 pub trait Pipeline {
-    fn execute(&self, agent, state, input) -> impl Future<Output = Result<String>>;
-    fn execute_stream(&self, agent, state, input)
-        -> impl Future<Output = Result<Pin<Box<ReceiverStream<Result<String>>>>>>;
+    // Same methods without Send + Sync
 }
 ```
 

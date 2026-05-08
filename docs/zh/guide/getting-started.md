@@ -30,11 +30,12 @@ ambi = { version = "0.3", features = ["llama-cpp", "cuda"] }
 ## 2. 最小 Agent
 
 ```rust
+use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
 use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = LLMEngineConfig::OpenAI(ambi::OpenAIEngineConfig {
+    let config = LLMEngineConfig::OpenAI(OpenAIEngineConfig {
         api_key: std::env::var("OPENAI_API_KEY")?,
         base_url: "https://api.openai.com/v1".into(),
         model_name: "gpt-4o".into(),

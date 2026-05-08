@@ -1,5 +1,9 @@
 // src/llm/providers/openai_api/sync.rs
 
+//! Synchronous (non-streaming) response generation for OpenAI-compatible APIs.
+//!
+//! Translates native OpenAI tool call responses into Ambi's tag-based format.
+
 use super::OpenAIEngine;
 use crate::error::{AmbiError, Result};
 use crate::types::LLMRequest;

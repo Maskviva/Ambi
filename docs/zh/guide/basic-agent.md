@@ -66,6 +66,7 @@ let state = AgentState::new_shared("user-42-conversation-3");
 ```rust
 state.write().await.set_dynamic_context("相关文档：...");
 state.write().await.append_dynamic_context("用户语言：zh-CN");
+state.write().await.clear_dynamic_context(); // 过期后重置
 ```
 
 ### 清空历史

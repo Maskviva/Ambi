@@ -42,6 +42,25 @@ impl AgentState {
     pub fn extensions(&self) -> &ExtensionsMap {
         &self.extensions
     }
+
+    /// Forks the current conversational state into an independent parallel universe.
+    /// This is a zero-cost operation for message contents, as the underlying `ChatHistory`
+    /// only clones `Arc` pointers.
+    /// Useful for advanced branching architectures like Tree of Thoughts (ToT) or CoT.
+    pub fn fork(&self) -> Self {
+        Self {
+            session_id: self.session_id.clone(),
+            dynamic_context: self.dynamic_context.clone(),
+            chat_history: self.chat_history.clone(),
+            extensions: ExtensionsMap::new(), // Note: Extensions are intentionally not cloned
+        }
+    }
+
+    /// Forks and wraps the state in a thread-safe atomic lock.
+    #[cfg_attr(target_arch = "wasm32", allow(clippy::arc_with_non_send_sync))]
+    pub fn fork_shared(&self) -> Arc<RwLock<Self>> {
+        Arc::new(RwLock::new(self.fork()))
+    }
 }
 
 impl Agent {

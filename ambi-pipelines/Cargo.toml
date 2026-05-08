@@ -1,0 +1,24 @@
+[package]
+name = "ambi-pipelines"
+version = "0.1.0"
+edition = "2024"
+description = "Advanced cognitive pipelines for Ambi: RAG, Chain-of-Thought, Tree-of-Thoughts, and Reflexion."
+license = "Apache-2.0"
+repository = "https://github.com/Maskviva/Ambi"
+readme = "README.md"
+keywords = ["ai", "agent", "llm", "rag", "pipeline"]
+categories = ["artificial-intelligence", "algorithms"]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+ambi = { version = "0.3", path = "../../Ambi", default-features = false }
+ambi-memory = { version = "0.1", path = "../ambi-memory" }
+async-trait = "0.1.89"
+tokio = "1.52.2"
+tokio-stream = "0.1.18"
+futures = "0.3.32"
+log = "0.4.29"
+serde = { version = "1.0.228", features = ["derive"] }
+chrono = "0.4.44"

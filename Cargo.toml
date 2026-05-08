@@ -1,12 +1,16 @@
 [workspace]
 members = [
     "bindings/node",
-    "examples/webAssembly"
+    "examples/webAssembly",
+    "ambi-macros",
+    "ambi-memory",
+    "ambi-pipelines",
 ]
+resolver = "2"
 
 [package]
 name = "ambi"
-version = "0.3.5"
+version = "0.3.6"
 edition = "2021"
 description = "A flexible, multi-backend, customizable AI agent framework, entirely based on Rust."
 license = "Apache-2.0"
@@ -56,8 +60,8 @@ tokio-stream = "0.1.18"
 anymap2 = "0.13.0"
 
 base64 = { version = "0.22.1", optional = true }
-ambi-macros = { version = "0.1.1", path = "ambi-macros", optional = true }
-async-openai = { version = "0.37.0", features = ["full"], optional = true }
+ambi-macros = { version = "0.1", path = "ambi-macros", optional = true }
+async-openai = { version = "0.38.0", features = ["chat-completion"], optional = true }
 llama-cpp-2 = { version = "0.1.146", optional = true }
 llama-cpp-sys-2 = { version = "0.1.146", optional = true }
 
@@ -80,6 +84,17 @@ web-sys = { version = "0.3", features = [
     "Window",
     "Headers",
 ] }
+
+
+[profile.dev]
+debug = 1
+codegen-units = 16
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev.package.llama-cpp-sys-2]
+opt-level = 3
 
 [package.metadata.docs.rs]
 features = ["openai-api", "llama-cpp", "mtmd", "macro"]
@@ -121,5 +136,5 @@ name = "memory_eviction_handler"
 required-features = ["openai-api"]
 
 [[example]]
-name = "crate_agent_in_macrp"
+name = "crate_agent_in_macro"
 required-features = ["openai-api", "macro"]

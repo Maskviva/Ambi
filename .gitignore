@@ -3,10 +3,11 @@
 /log/
 /.cargo/
 /Cargo.lock
-/ambi-macros/Cargo.lock
+/**/Cargo.lock
 /run_ide.bat
 /example/chat_local/config.toml
 /copy_rs.bat
+/**/copy_rs.bat
 /docs/node_modules
 /docs/pnpm-lock.yaml
 /docs/.vitepress/dist
@@ -17,3 +18,7 @@
 /bindings/node/index.d.ts
 /bindings/node/index.js
 /bindings/node/npm
+
+
+
+

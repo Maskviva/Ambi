@@ -1,5 +1,7 @@
 // src/agent/pipeline/chat_runner/stream_handler.rs
 
+//! LLM streaming output processor: relays real-time text chunks through the formatter pipeline.
+
 use super::ChatRunner;
 use crate::agent::core::FormatterFactory;
 use crate::error::{AmbiError, Result};

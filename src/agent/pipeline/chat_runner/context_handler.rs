@@ -1,5 +1,7 @@
 // src/agent/pipeline/chat_runner/context_handler.rs
 
+//! State mutation helpers for pushing messages, computing LLM requests, and managing eviction.
+
 use super::StateManager;
 use crate::agent::core::{Agent, EvictionHandler};
 use crate::config::EvictionStrategy;

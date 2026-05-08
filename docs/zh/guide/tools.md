@@ -62,8 +62,8 @@ impl Tool for WeatherTool {
 
 ```rust
 let agent = Agent::make(config).await?
-    .preamble("你是一个天气助手。")
-    .tool(WeatherTool)?;   // 名字冲突时返回 Err
+.preamble("你是一个天气助手。")
+.tool(WeatherTool) ?;   // 名字冲突时返回 Err
 ```
 
 当用户问"东京天气怎么样？"，LLM 可能会调用 `get_weather`。框架拦截这个调用，解析参数，执行函数，然后把结果放回对话上下文。
@@ -74,46 +74,31 @@ let agent = Agent::make(config).await?
 
 ## 用 `#[tool]` 宏
 
-启用 `macro` 特性之后，可以减少样板代码：
+启用 `macro` 特性之后，可以直接在函数上标注来减少样板代码，无需手动实现 trait。
+
+在 `Cargo.toml` 中启用：
 
 ```toml
+[dependencies]
 ambi = { version = "0.3", features = ["openai-api", "macro"] }
 ```
 
-```rust
-use ambi::tool;
-
-#[tool(
-    name = "search_docs",
-    description = "搜索文档",
-    params = {
-        "query": {
-            "type": "string",
-            "description": "搜索关键词"
-        }
-    }
-)]
-async fn search_docs(query: String) -> Result<String, ToolErr> {
-    Ok(format!("搜索结果：{}", query))
-}
-```
-
-`params(...)` 属性让你可以直接在函数参数上注入面向 LLM 的描述信息，为模型提供更丰富的路由提示。
-宏会自动生成 `Tool` 实现、参数结构体和 `ToolDefinition`。
+完整的 `#[tool]` 和 `#[agent]` 宏文档请参阅 [ambi-macros](/zh/extensions/ambi-macros)，包含参数描述、类型推断和生成代码示例等细节。
 
 ## 每个工具的配置
 
 `ToolDefinition` 有三个重要字段：
 
-| 字段 | 默认值 | 含义 |
-|------|-------|------|
-| `timeout_secs` | `Some(15)` | 工具最多能跑多久，超时直接打断 |
-| `max_retries` | `Some(3)` | 超时后重试次数（仅对幂等工具生效） |
-| `is_idempotent` | `false` | 是否可以安全重试——读操作 = 是，写操作/发邮件 = 否 |
+| 字段              | 默认值        | 含义                            |
+|-----------------|------------|-------------------------------|
+| `timeout_secs`  | `Some(15)` | 工具最多能跑多久，超时直接打断               |
+| `max_retries`   | `Some(3)`  | 超时后重试次数（仅对幂等工具生效）             |
+| `is_idempotent` | `false`    | 是否可以安全重试——读操作 = 是，写操作/发邮件 = 否 |
 
 ### 为什么 is_idempotent 重要
 
-非幂等工具**永远不会重试**。如果"发邮件"工具跑超时了，框架不会跑第二次——你不会想让用户收到两封一样的邮件。只读工具（"查数据库"）可以安全重试。
+非幂等工具**永远不会重试**。如果"发邮件"工具跑超时了，框架不会跑第二次——你不会想让用户收到两封一样的邮件。只读工具（"
+查数据库"）可以安全重试。
 
 ## 工具调用的完整流程
 
@@ -132,7 +117,7 @@ async fn search_docs(query: String) -> Result<String, ToolErr> {
 use ambi::ChatRunner;
 
 // 默认并发（5）
-let runner = ChatRunner::default();
+let runner = ChatRunner::default ();
 
 // 自定义并发限制
 let runner = ChatRunner::new(3);
@@ -140,8 +125,8 @@ let runner = ChatRunner::new(3);
 
 ```rust
 stream::iter(calls)
-    .map(|(name, args, id)| run_tool(name, args, id))
-    .buffered(runner.maximum_concurrency)
+.map( | (name, args, id) | run_tool(name, args, id))
+.buffered(runner.maximum_concurrency)
 ```
 
 如果 LLM 调了三个工具，它们并行跑。一个比较慢不会阻塞其他的。
@@ -152,4 +137,5 @@ stream::iter(calls)
 
 ## JSON 格式错误恢复
 
-如果 LLM 输出了不合法的 JSON（多余的逗号、花括号没闭合），解析器会生成一个特殊的 `__format_error__` 调用。框架在下一次 LLM 请求里注入纠错提示，让模型自己修正格式。不会崩溃，给模型一次改过的机会。
+如果 LLM 输出了不合法的 JSON（多余的逗号、花括号没闭合），解析器会生成一个特殊的 `__format_error__` 调用。框架在下一次 LLM
+请求里注入纠错提示，让模型自己修正格式。不会崩溃，给模型一次改过的机会。

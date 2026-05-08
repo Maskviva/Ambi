@@ -146,8 +146,3 @@ pub mod wasm_api {
         // If nothing goes wrong, a `pkg` folder will be generated in your project root directory, which contains the compiled wasm files
     }
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-fn main() {
-    println!("You should set the build target to wasm32-unknown-unknown");
-}

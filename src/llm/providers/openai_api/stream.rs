@@ -1,5 +1,11 @@
 // src/llm/providers/openai_api/stream.rs
 
+//! Streaming response generation for OpenAI-compatible APIs.
+//!
+//! Provides two code paths: native (via async-openai create_stream) and
+//! WASM (via browser fetch + ReadableStream), both emitting text chunks
+//! and assembling native tool call deltas into simulated tag-based calls.
+
 use super::OpenAIEngine;
 use crate::error::{AmbiError, Result};
 use crate::types::LLMRequest;

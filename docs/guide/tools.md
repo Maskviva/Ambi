@@ -74,33 +74,16 @@ Tool names must be unique. If you register two tools with the same name, `tool()
 
 ## Using the `#[tool]` macro
 
-If you enable the `macro` feature, you can reduce boilerplate:
+If you enable the `macro` feature, you can reduce boilerplate by annotating functions directly — no manual trait impl needed.
+
+Enable it in your `Cargo.toml`:
 
 ```toml
+[dependencies]
 ambi = { version = "0.3", features = ["openai-api", "macro"] }
 ```
 
-```rust
-use ambi::tool;
-
-#[tool(
-    name = "search_docs",
-    description = "Search documentation",
-    params = {
-        "query": {
-            "type": "string",
-            "description": "Search term"
-        }
-    }
-)]
-async fn search_docs(query: String) -> Result<String, ToolErr> {
-    Ok(format!("Results for: {}", query))
-}
-```
-
-The `params(...)` attribute lets you inject LLM-facing descriptions directly into function arguments,
-providing richer routing hints to the model. The macro generates the `Tool` implementation, the
-argument struct, and the `ToolDefinition` automatically.
+See [ambi-macros](/extensions/ambi-macros) for full documentation on the `#[tool]` and `#[agent]` macros, including parameter descriptions, type inference, and generated code examples.
 
 ## Per-tool configuration
 

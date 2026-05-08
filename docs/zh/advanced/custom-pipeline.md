@@ -57,4 +57,15 @@ impl Pipeline for MySimplePipeline {
 - **工具解析** → 自定义 `ToolCallParser`（见[工具解析器](/zh/advanced/tool-parser)）
 - **引擎行为** → 自定义 `LLMEngineTrait`（见[自定义引擎](/zh/advanced/custom-engine)）
 
+### 预构建管道
+
+[`ambi-pipelines`](/zh/extensions/ambi-pipelines) 扩展库提供了生产就绪的管道实现：
+
+| 管道 | 描述 |
+|---|---|
+| `StandardRagPipeline` | 检索增强生成，带 token 感知的上下文打包 |
+| `SelfConsistencyPipeline` | 并行思维链 + 多数投票 |
+| `BfsBeamSearchPipeline` | 思维树广度优先束搜索 |
+| `ReflexionPipeline` | 执行者-评估者循环，带持久化批评记忆 |
+
 如果真的需要完全自定义循环，复制 `ChatRunner` 的结构然后改你需要的部分。

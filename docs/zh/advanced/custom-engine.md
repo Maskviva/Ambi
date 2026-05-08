@@ -67,7 +67,7 @@ let agent = Agent::make(
 ).await?;
 ```
 
-这是 **v0.3.3 起推荐** 的方式。旧的 `Agent::with_custom_engine()` 方法已废弃。
+这是**推荐**的方式。旧的 `Agent::with_custom_engine()` 方法已废弃。
 
 注意 `LLMEngineConfig::Custom` 是同步的 —— 不需要 `spawn_blocking`，因为没有模型文件要加载。这也意味着它在 `current_thread` Tokio 运行时下也能工作。
 
@@ -106,7 +106,7 @@ let engine = LLMEngine::load(LLMEngineConfig::Custom(Box::new(my_engine)))?;
 let engine = engine.with_custom_tokenizer(MyTokenizer);
 ```
 
-> **注意：** 旧的 `LLMEngine::from_custom()` 方法自 v0.3.3 起已废弃。
+> **注意：** 旧的 `LLMEngine::from_custom()` 方法已废弃。
 > 请使用 `LLMEngine::load(LLMEngineConfig::Custom(backend))` 替代。
 
 这会影响上下文驱逐的准确性。不准的分词器可能导致过早或过晚驱逐。

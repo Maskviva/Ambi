@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+# Changelog
+
+## [0.3.6] — 2026-05-05
+
+### New Features
+
+- **`AgentState::fork()` / `fork_shared()`** — State branching primitives that create
+  independent, parallel conversation universes. `ChatHistory` and `ChatRunner` now derive
+  `Clone` to support this. Designed for Tree-of-Thoughts (BFS) and Self-Consistency (CoT)
+  pipelines that need concurrent, isolated reasoning branches.
+
+- **`ambi-memory` crate (v0.1.0)** — A pluggable, multi-dimensional cognitive memory
+  system. Exposes the `AgentStateMemoryExt` extension trait with:
+    - **KV Memory**: Store/recall key-value state (reflexion settings).
+    - **Semantic Memory**: Archive and vector-search long-term interactions.
+    - **Summary Memory**: Rolling anti-amnesia summaries via LLM-assisted eviction
+      compression (`summarize_evicted_messages` auto-digests evicted chat history).
+
+- **`ambi-pipelines` crate (v0.1.0)** — Advanced cognitive execution pipelines:
+    - **RAG**: Document retrieval, packing, semantic retriever, and pipeline orchestration.
+    - **CoT Self-Consistency**: Parallel reasoning branches with majority-vote aggregation.
+    - **Tree of Thoughts (ToT)**: BFS beam search over multiple thought paths.
+    - **Reflexion**: Actor-evaluator loop with persistent critique memory.
+    - `ChatRunner` re-exported as `ReactPipeline` for unified access.
+
+### Documentation
+
+- **Module-level doc comments** added to: `ambi-macros` (lib, `#[tool]`, `#[agent]`),
+  all `ambi-pipelines` modules (RAG, CoT, ToT, Reflexion), all `ambi-memory` modules,
+  `llama_cpp`, `openai_api` (stream, sync, translator), and `src/config/agent.rs`.
+- **New extensions documentation** — `docs/extensions/ambi-macros.md` (EN & ZH)
+  replacing the deleted `ambi-macros/README_zh.md`, now integrated into the VitePress
+  site with full sidebar navigation.
+- **VitePress config** — Added i18n locale config, local search, Extensions sidebar
+  section, and social links for both English and Chinese.
+
 ## [0.3.5] — 2026-05-05
 
 > **Note:** 0.3.4 is deprecated due to unlocalized Chinese text and uncommented

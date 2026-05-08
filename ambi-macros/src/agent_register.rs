@@ -1,4 +1,4 @@
-// ambi-macros/src/agent_register.rs
+//! Implementation of the `#[agent]` proc-macro: facade generation, builder pattern, and session management.
 
 use proc_macro::TokenStream;
 use quote::quote;

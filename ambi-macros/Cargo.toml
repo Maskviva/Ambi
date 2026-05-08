@@ -2,10 +2,12 @@
 name = "ambi-macros"
 version = "0.1.2"
 edition = "2021"
-description = "Procedural macros for Ambi"
+description = "Procedural macros (#[tool], #[agent]) for the Ambi AI agent framework."
 license = "Apache-2.0"
 repository = "https://github.com/Maskviva/Ambi"
 readme = "README.md"
+keywords = ["ai", "agent", "llm", "macro", "procedural-macro"]
+categories = ["artificial-intelligence", "development-tools::procedural-macro-helpers"]
 
 [lib]
 path = "src/lib.rs"

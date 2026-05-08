@@ -9,7 +9,7 @@ use std::sync::Arc;
 /// Note: `ChatHistory` now exclusively stores conversational turns (`User`, `Assistant`, `Tool`).
 /// System instructions and dynamic contexts are handled separately in the `Agent` blueprint
 /// and `AgentState`, ensuring pure FIFO eviction logic and optimal KV Cache performance.
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct ChatHistory {
     messages: Vec<(Arc<Message>, usize)>,
     total_tokens: usize,

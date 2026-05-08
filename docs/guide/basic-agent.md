@@ -68,6 +68,7 @@ without polluting the static `system_prompt`:
 ```rust
 state.write().await.set_dynamic_context("Relevant docs: ...");
 state.write().await.append_dynamic_context("User locale: zh-CN");
+state.write().await.clear_dynamic_context(); // reset when stale
 ```
 
 ### Clearing history

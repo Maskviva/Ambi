@@ -49,7 +49,8 @@ export default defineConfig({
                     {text: 'Home', link: '/'},
                     {text: 'Guide', link: '/guide/getting-started'},
                     {text: 'Advanced', link: '/advanced/architecture'},
-                    {text: 'Platform', link: '/platform/native'}
+                    {text: 'Platform', link: '/platform/native'},
+                    {text: 'Extensions', link: '/extensions/ambi-macros'}
                 ],
 
                 sidebar: {
@@ -87,6 +88,16 @@ export default defineConfig({
                                 {text: 'WebAssembly (WASM)', link: '/platform/wasm'}
                             ]
                         }
+                    ],
+                    '/extensions/': [
+                        {
+                            text: 'Extensions',
+                            items: [
+                                {text: 'ambi-macros', link: '/extensions/ambi-macros'},
+                                {text: 'ambi-memory', link: '/extensions/ambi-memory'},
+                                {text: 'ambi-pipelines', link: '/extensions/ambi-pipelines'}
+                            ]
+                        }
                     ]
                 },
 
@@ -113,7 +124,8 @@ export default defineConfig({
                     {text: '首页', link: '/zh/'},
                     {text: '指南', link: '/zh/guide/getting-started'},
                     {text: '高阶开发', link: '/zh/advanced/architecture'},
-                    {text: '平台', link: '/zh/platform/native'}
+                    {text: '平台', link: '/zh/platform/native'},
+                    {text: '扩展', link: '/zh/extensions/ambi-macros'}
                 ],
 
                 sidebar: {
@@ -149,6 +161,16 @@ export default defineConfig({
                             items: [
                                 {text: '原生平台 (Linux/Win/Mac)', link: '/zh/platform/native'},
                                 {text: 'WebAssembly (WASM)', link: '/zh/platform/wasm'}
+                            ]
+                        }
+                    ],
+                    '/zh/extensions/': [
+                        {
+                            text: '扩展',
+                            items: [
+                                {text: 'ambi-macros', link: '/zh/extensions/ambi-macros'},
+                                {text: 'ambi-memory', link: '/zh/extensions/ambi-memory'},
+                                {text: 'ambi-pipelines', link: '/zh/extensions/ambi-pipelines'}
                             ]
                         }
                     ]

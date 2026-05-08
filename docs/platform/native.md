@@ -31,7 +31,7 @@ let agent = Agent::make(
 ).await?; // no spawn_blocking
 ```
 
-> **Note:** The old `Agent::with_custom_engine()` is deprecated since v0.3.3.
+> **Note:** The old `Agent::with_custom_engine()` is deprecated.
 > Use `Agent::make(LLMEngineConfig::Custom(backend)).await` instead.
 
 ## GPU acceleration

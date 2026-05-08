@@ -1,5 +1,7 @@
 // src/agent/pipeline/chat_runner/multimodal_handler.rs
 
+//! The core ReAct event loop for synchronous and streaming chat, with multimodal input support.
+
 use super::{ChatRunner, StateManager};
 use crate::agent::core::{
     Agent, AgentState, DynToolObj, EvictionHandler, FormatterFactory, ToolCallParserObj,

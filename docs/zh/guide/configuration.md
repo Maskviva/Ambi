@@ -66,22 +66,24 @@ OpenAIEngineConfig {
 
 ```rust
 LlamaEngineConfig {
-    model_path: String,
-    max_tokens: u32,
-    buffer_size: u32,
-    use_gpu: bool,
-    n_gpu_layers: u32,
-    n_ctx: u32,
-    n_tokens: u32,
-    n_seq_max: u32,
-    penalty_last_n: u32,
-    penalty_repeat: f32,
-    penalty_freq: f32,
-    penalty_present: f32,
-    temp: f32,
-    top_p: f32,
-    seed: u32,
-    min_keep: u32,
+    model_path: String,              // .gguf 模型文件路径
+    mmproj_path: Option<String>,     // 外部视觉投影模型（如 mmproj-model-f16.gguf）
+    integrated_vision: bool,         // 模型是否具有原生视觉能力
+    max_tokens: i32,                 // 最大预测 token 数
+    buffer_size: usize,              // batch 解码缓冲区大小
+    use_gpu: bool,                   // 是否将层卸载到 GPU
+    n_gpu_layers: u32,               // 卸载到 GPU 的层数
+    n_ctx: u32,                      // 上下文窗口大小
+    n_tokens: usize,                 // prompt 处理的 batch 大小
+    n_seq_max: i32,                  // batch 中最大序列数
+    penalty_last_n: i32,             // 惩罚时考虑的历史 token 数
+    penalty_repeat: f32,             // 重复惩罚系数
+    penalty_freq: f32,               // 频率惩罚系数
+    penalty_present: f32,            // 存在惩罚系数
+    temp: f32,                       // 温度 (0.0 – 2.0)
+    top_p: f32,                      // 核采样阈值
+    seed: u32,                       // 随机种子（确定性生成）
+    min_keep: usize,                 // min-keep 采样边界
 }
 ```
 
@@ -102,7 +104,7 @@ ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
 | `vulkan` | Vulkan 加速 | + Vulkan SDK |
 | `metal` | Apple Metal 加速 | + Metal framework |
 | `rocm` | AMD ROCm 加速 | + ROCm |
-| `macro` | `#[tool]` 属性宏，支持 `params(...)` 参数描述 | `ambi-macros` |
+| `macro` | `#[tool]` 和 `#[agent]` 属性宏（参见 [ambi-macros](/zh/extensions/ambi-macros)） | `ambi-macros` |
 | `mtmd` | Llama 多模态支持 (VLM) | + `base64` |
 
 编译时不能同时启用两个 GPU 后端——有一个 `compile_error!` 守卫。

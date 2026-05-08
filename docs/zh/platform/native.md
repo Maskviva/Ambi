@@ -31,7 +31,7 @@ let agent = Agent::make(
 ).await?; // 不需要 spawn_blocking
 ```
 
-> **注意：** 旧的 `Agent::with_custom_engine()` 自 v0.3.3 起已废弃。
+> **注意：** 旧的 `Agent::with_custom_engine()` 已废弃。
 > 请使用 `Agent::make(LLMEngineConfig::Custom(backend)).await` 替代。
 
 ## GPU 加速

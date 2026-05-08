@@ -7,14 +7,14 @@
 这是最重要的设计决策。`Agent` 是只读蓝图。`AgentState` 是可变的对话记忆。
 
 ```
-Agent（只读，所有字段 Arc 包装 → 零成本克隆）
-├── LLMEngine              → 模型后端
-├── AgentConfig            → 系统提示词、模板、驱逐策略
-├── tools_def / tool_map   → 注册的工具和定义
-├── tool_parser            → 从 LLM 输出中解析工具调用的方式
-├── cached_tool_prompt     → 预渲染的工具指令字符串
-├── formatter_factory      → 流式输出清理方式
-└── on_evict_handler       → 消息被驱逐时的回调（接收 &AgentState）
+Agent（只读，所有字段 pub(crate) / Arc 包装 → 零成本克隆）
+├── llm_engine (Arc<LLMEngine>)  → 模型后端 (pub(crate))
+├── config (Arc<AgentConfig>)    → 系统提示词、模板、驱逐策略
+├── tools_def / tool_map         → 注册的工具和定义
+├── tool_parser                  → 从 LLM 输出中解析工具调用的方式
+├── cached_tool_prompt           → 预渲染的工具指令字符串
+├── formatter_factory            → 流式输出清理方式
+└── on_evict_handler             → 消息被驱逐时的回调（接收 &AgentState）
 
 AgentState（可变，RwLock）
 ├── session_id             → 唯一会话标识（KV Cache 槽位分配、分布式追踪）
@@ -23,12 +23,8 @@ AgentState（可变，RwLock）
 └── extensions             → anymap2 用于自定义状态
 ```
 
-**v0.3.3 的架构变化：**
-
-- `session_id` 加入 `AgentState`，支持高并发环境下的分布式追踪和 KV Cache 槽位分配。
-- `dynamic_context` 加入 `AgentState`，将易变数据（RAG、时间戳）与 `AgentConfig` 中的静态 `system_prompt` 分离。
-- `Message::System` 从 `ChatHistory` 中移除。历史记录现在是 `User`、`Assistant`、`Tool` 事件的纯 FIFO 队列，将上下文驱逐算法简化为 O(1) 截断。
-- Agent 字段（`config`、`cached_tool_prompt`）用 `Arc` 包装，确保跨 Tokio 任务的真正零成本克隆。
+注意：Agent 的字段都是 `pub(crate)` 的——外部代码通过公开 API（`chat()`、`chat_stream()` 等）与 Agent 交互，
+而不是直接访问内部字段。
 
 这样设计的好处：
 
@@ -74,8 +70,8 @@ AgentState（可变，RwLock）
 
 ### ChatRunner 并发控制
 
-`ChatRunner` 现在持有 `maximum_concurrency` 字段（默认 5，通过 `ChatRunner::default()` 创建），
-可以对并行 ghost 工具执行进行灵活的速率限制：
+`ChatRunner` 持有 `maximum_concurrency` 字段（默认 5，通过 `ChatRunner::default()` 创建），
+可以对并行工具执行进行灵活的速率限制：
 
 ```rust
 use ambi::ChatRunner;
@@ -112,10 +108,21 @@ let runner = ChatRunner::new(3);
 `Pipeline` 是定义执行契约的 trait。`ChatRunner` 是内置实现，你可以写自己的：
 
 ```rust
+// 原生平台 (Send + Sync)
+pub trait Pipeline: Send + Sync {
+    fn execute(
+        &self, agent: &Agent, state: &Arc<RwLock<AgentState>>, input: Vec<ContentPart>
+    ) -> impl Future<Output = Result<String>> + Send;
+
+    fn execute_stream(
+        &self, agent: &Agent, state: &Arc<RwLock<AgentState>>, input: Vec<ContentPart>
+    ) -> impl Future<Output = Result<Pin<Box<ReceiverStream<Result<String>>>>>> + Send;
+}
+
+// WASM (无 Send + Sync 约束)
+#[cfg(target_arch = "wasm32")]
 pub trait Pipeline {
-    fn execute(&self, agent, state, input) -> impl Future<Output = Result<String>>;
-    fn execute_stream(&self, agent, state, input)
-        -> impl Future<Output = Result<Pin<Box<ReceiverStream<Result<String>>>>>>;
+    // 方法签名相同，但不含 Send + Sync
 }
 ```
 

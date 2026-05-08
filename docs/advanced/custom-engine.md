@@ -68,7 +68,7 @@ let agent = Agent::make(
 ).await?;
 ```
 
-This is the **recommended** approach since v0.3.3. The old `Agent::with_custom_engine()` is deprecated.
+This is the **recommended** approach. The old `Agent::with_custom_engine()` is deprecated.
 
 Note: `LLMEngineConfig::Custom` is synchronous – it doesn't need `spawn_blocking` because there's no model file to load. This also means it works in `current_thread` Tokio runtimes.
 
@@ -107,7 +107,7 @@ let engine = LLMEngine::load(LLMEngineConfig::Custom(Box::new(my_engine)))?;
 let engine = engine.with_custom_tokenizer(MyTokenizer);
 ```
 
-> **Note:** The old `LLMEngine::from_custom()` method is deprecated since v0.3.3.
+> **Note:** The old `LLMEngine::from_custom()` method is deprecated.
 > Use `LLMEngine::load(LLMEngineConfig::Custom(backend))` instead.
 
 This affects context eviction accuracy. An inaccurate tokenizer may evict too early or too late.

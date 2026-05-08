@@ -1,4 +1,9 @@
-// src/llm/providers/openai/translator.rs
+// src/llm/providers/openai_api/translator.rs
+
+//! Request/response translators between Ambi's internal types and the OpenAI API schema.
+//!
+//! Converts `LLMRequest` into `CreateChatCompletionRequest`, handling system prompts,
+//! multi-modal content (text + image), tool definitions, and assistant tool calls.
 
 use super::OpenAIEngine;
 use crate::error::{AmbiError, Result};

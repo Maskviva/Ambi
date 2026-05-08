@@ -1,5 +1,7 @@
 // src/agent/pipeline/chat_runner/tool_handler.rs
 
+//! Concurrent tool call execution, ghost-cancellation on disconnect, and result injection into history.
+
 use super::{ChatRunner, StateManager};
 use crate::agent::core::DynToolObj; // <-- Import Type Alias
 use crate::agent::tool::ToolManager;

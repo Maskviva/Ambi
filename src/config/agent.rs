@@ -1,5 +1,7 @@
 // src/config/agent.rs
 
+//! Agent-specific configuration parameters governing behavior, persona, and context policies.
+
 use crate::types::ChatTemplate;
 use serde::{Deserialize, Serialize};
 

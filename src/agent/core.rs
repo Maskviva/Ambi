@@ -147,4 +147,18 @@ impl Agent {
     pub async fn evaluate_sentence_entropy(&self, sentence: &str) -> crate::error::Result<f32> {
         self.llm_engine.evaluate_sentence_entropy(sentence).await
     }
+
+    /// Returns a cloned `Arc` to the underlying [`LLMEngine`].
+    ///
+    /// This provides direct access to the engine (e.g., for custom inference calls,
+    /// parameter tweaking, or engine-specific operations). Cloning the `Arc` is
+    /// cheap and does not duplicate the engine itself.
+    ///
+    /// # Note
+    ///
+    /// Mutations performed on the engine may affect all `Agent` instances sharing
+    /// the same engine handle.
+    pub fn get_llama_engine(&self) -> Arc<LLMEngine> {
+        self.llm_engine.clone()
+    }
 }
