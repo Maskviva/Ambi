@@ -6,26 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
 # 更新日志
+
+## [0.3.7] — 2026-05-11
+
+### 新功能
+
+- **Python 绑定** (`bindings/python/`) — 全新的原生 Python 扩展
+  基于 maturin/PyO3 构建。公开完整的 Agent API：
+    - `Agent.make()`、`AgentState`、`Pipeline`、`LLMEngineConfig`
+    - `resolve_request()` 用于自定义引擎异步回调
+    - `_tool_helpers.py` 中的 `build_tool()` 辅助函数，方便工具注册
+    - 内置模板函数：`chatml_template()`、`deepseek_template()`、
+      `llama3_template()`、`qwen_template()` 等
+    - 6 个即用型示例，涵盖聊天、流媒体、自定义引擎、
+      自定义模板、工具调用和内存清理。
+- **Node.js 绑定重构** — 完全重构 Node 绑定：
+    - 新增 `bindings/node/lib/` 层，提供完善的 JavaScript API
+      （`Agent`、`LLMEngineConfig`、`Pipeline`、`ChatStream`），基于
+
+NAPI-RS 生成的类型。
+
+### 维护
+
+- 版本升级：0.3.6 → 0.3.7。
 
 ## [0.3.6] — 2026-05-05
 
 ### 新功能
 
 - **`AgentState::fork()` / `fork_shared()`** — 创建独立并行对话宇宙的状态分支原语
-`ChatHistory` 和 `ChatRunner` 现在继承自
-`Clone` 以支持此功能。专为需要并发、隔离推理分支的思维树 (BFS) 和自洽性 (CoT)
-管道而设计。
+  `ChatHistory` 和 `ChatRunner` 现在继承自
+  `Clone` 以支持此功能。专为需要并发、隔离推理分支的思维树 (BFS) 和自洽性 (CoT)
+  管道而设计。
 
 - **`ambi-memory` crate (v0.1.0)** — 一个可插拔的多维认知记忆
-系统。公开了 `AgentStateMemoryExt` 扩展特性，包含：
+  系统。公开了 `AgentStateMemoryExt` 扩展特性，包含：
 
 - **键值记忆**：存储/调用键值状态（反射设置）。
 
 - **语义记忆**：归档和向量搜索长期交互。
 
 - **摘要记忆**：通过 LLM 辅助的驱逐机制实现滚动式防遗忘摘要
-压缩（`summarize_evicted_messages` 自动摘要已驱逐的聊天记录）。
+  压缩（`summarize_evicted_messages` 自动摘要已驱逐的聊天记录）。
 
 - **`ambi-pipelines` crate (v0.1.0)** — 高级认知执行流水线：
 - **RAG**：文档检索、打包、语义检索和流水线编排。
@@ -37,15 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 文档
 
 - **模块级文档注释** 已添加到：`ambi-macros`（lib、`#[tool]`、`#[agent]`），
-所有 `ambi-pipelines` 模块（RAG、CoT、ToT、Reflexion），所有 `ambi-memory` 模块，
-`llama_cpp`，`openai_api`（stream、sync、translator），以及 `src/config/agent.rs`。
+  所有 `ambi-pipelines` 模块（RAG、CoT、ToT、Reflexion），所有 `ambi-memory` 模块，
+  `llama_cpp`，`openai_api`（stream、sync、translator），以及 `src/config/agent.rs`。
 
 - **新增扩展文档** — `docs/extensions/ambi-macros.md`（英文和中文）
-替换了已删除的 `ambi-macros/README_zh.md`，现已集成到 VitePress
-网站中，并带有完整的侧边栏导航。
+  替换了已删除的 `ambi-macros/README_zh.md`，现已集成到 VitePress
+  网站中，并带有完整的侧边栏导航。
 
 - **VitePress 配置** — 添加了 i18n 语言环境配置、本地搜索、扩展侧边栏
-部分以及英文和中文的社交链接。
+  部分以及英文和中文的社交链接。
 
 ## [0.3.5] — 2026-05-05
 

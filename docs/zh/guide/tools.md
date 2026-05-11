@@ -63,7 +63,7 @@ impl Tool for WeatherTool {
 ```rust
 let agent = Agent::make(config).await?
 .preamble("你是一个天气助手。")
-.tool(WeatherTool) ?;   // 名字冲突时返回 Err
+.tool(WeatherTool)?;   // 名字冲突时返回 Err
 ```
 
 当用户问"东京天气怎么样？"，LLM 可能会调用 `get_weather`。框架拦截这个调用，解析参数，执行函数，然后把结果放回对话上下文。
@@ -117,7 +117,8 @@ ambi = { version = "0.3", features = ["openai-api", "macro"] }
 use ambi::ChatRunner;
 
 // 默认并发（5）
-let runner = ChatRunner::default ();
+let runner = ChatRunner::default();
+
 
 // 自定义并发限制
 let runner = ChatRunner::new(3);
@@ -125,7 +126,7 @@ let runner = ChatRunner::new(3);
 
 ```rust
 stream::iter(calls)
-.map( | (name, args, id) | run_tool(name, args, id))
+.map(|(name, args, id)| run_tool(name, args, id))
 .buffered(runner.maximum_concurrency)
 ```
 

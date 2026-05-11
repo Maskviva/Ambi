@@ -1,6 +1,6 @@
 [package]
 name = "ambi-memory"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Pluggable 3D memory extension for Ambi: KV state, semantic vector recall, and rolling summary."
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ categories = ["artificial-intelligence", "data-structures", "algorithms"]
 path = "src/lib.rs"
 
 [dependencies]
-ambi = { version = "0.3", path = "../../Ambi", default-features = false }
+ambi = { version = "0.3", path = "../", default-features = false }
 
 async-trait = "0.1.89"
 thiserror = "2.0.18"

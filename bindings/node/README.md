@@ -26,6 +26,20 @@ The package ships with prebuilt binaries for:
 
 No Rust toolchain required on the consuming machine.
 
+## Build & Publish
+
+```bash
+cd bindings/node
+
+# Build the native addon for the current platform
+npm run build
+
+# Publish to npm
+npm publish
+```
+
+The package ships with prebuilt binaries built via GitHub Actions for all supported platforms.
+
 ## Quick Start
 
 ```js

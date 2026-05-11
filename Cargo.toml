@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "bindings/node",
-    "examples/webAssembly",
+    "bindings/python",
     "ambi-macros",
     "ambi-memory",
     "ambi-pipelines",
@@ -10,7 +10,7 @@ resolver = "2"
 
 [package]
 name = "ambi"
-version = "0.3.6"
+version = "0.3.7"
 edition = "2021"
 description = "A flexible, multi-backend, customizable AI agent framework, entirely based on Rust."
 license = "Apache-2.0"

@@ -1,12 +1,14 @@
 {
-  "name": "ambi-node",
-  "version": "0.1.2",
+  "name": "@maskviva/ambi-node",
+  "version": "0.2.1",
   "description": "Node.js binding for Ambi — a high-perf, cross-platform AI Agent framework built in Rust",
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "files": [
-    "index.js",
-    "index.d.ts",
+    "lib/index.js",
+    "lib/index.d.ts",
+    "lib/llama.js",
+    "lib/llama.d.ts",
     "examples/",
     "README.md"
   ],
@@ -47,9 +49,12 @@
     "@napi-rs/cli": "^3.6.2"
   },
   "optionalDependencies": {
-    "@maskviva/ambi-node-win32-x64-msvc": "0.1.2",
-    "@maskviva/ambi-node-linux-x64-gnu": "0.1.2",
-    "@maskviva/ambi-node-linux-arm64-gnu": "0.1.2",
-    "@maskviva/ambi-node-linux-arm64-musl": "0.1.2"
+    "@maskviva/ambi-node-linux-x64-gnu": "0.2.1",
+    "@maskviva/ambi-node-win32-x64-msvc": "0.2.1",
+    "@maskviva/ambi-node-linux-arm64-gnu": "0.2.1",
+    "@maskviva/ambi-node-linux-arm64-musl": "0.2.1"
+  },
+  "dependencies": {
+    "node-llama-cpp": "^3.18.1"
   }
 }

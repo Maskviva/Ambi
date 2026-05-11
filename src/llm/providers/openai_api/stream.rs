@@ -16,7 +16,7 @@ use async_openai::types::chat::ChatCompletionMessageToolCallChunk;
 #[cfg(not(target_arch = "wasm32"))]
 use futures::StreamExt;
 #[cfg(not(target_arch = "wasm32"))]
-use log::debug;
+use log::{debug, warn};
 #[cfg(not(target_arch = "wasm32"))]
 use std::collections::BTreeMap;
 #[cfg(target_arch = "wasm32")]
@@ -226,13 +226,20 @@ impl OpenAIEngine {
             let response = match result {
                 Ok(resp) => resp,
                 Err(e) => {
+                    let err_msg = e.to_string();
+
+                    if err_msg.contains("[DONE]") {
+                        warn!("[OpenAI API] Stream interrupted; {}", err_msg);
+                        break;
+                    }
+
                     let _ = tx
                         .send(Err(AmbiError::EngineError(format!(
                             "Stream interrupted: {}",
-                            e
+                            err_msg
                         ))))
                         .await;
-                    return Err(AmbiError::EngineError(e.to_string()));
+                    return Err(AmbiError::EngineError(err_msg));
                 }
             };
 

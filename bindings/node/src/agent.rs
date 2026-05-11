@@ -1,154 +1,160 @@
-// bindings/node/src/agent.rs
-
-use super::config::JsChatTemplate;
-use super::config::JsChatTemplateType;
-use super::config::JsEvictionStrategy;
-use super::engine::JsEngine;
-use super::types::JsMessage;
-use ambi::AgentState;
+use crate::config::JsLLMEngineConfig;
+use crate::template::{JsChatTemplate, JsChatTemplateType};
+use crate::tool::JsToolBridge;
+use ambi::config::EvictionStrategy;
+use ambi::types::ChatTemplate;
+use ambi::Agent;
+use napi::bindgen_prelude::*;
+use napi::threadsafe_function::ThreadsafeFunction;
 use napi_derive::napi;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use serde_json::Value;
 
-// ── AgentState ──
-
-/// The mutable half of a conversation. `AgentState` is deliberately
-/// decoupled from the `Agent` blueprint so a single agent can juggle
-/// many independent conversations — one state per chat session.
-#[napi]
-pub struct JsAgentState {
-    pub(crate) inner: Arc<RwLock<AgentState>>,
-}
-
-#[napi]
-impl JsAgentState {
-    /// Start with a blank slate.
-    #[napi(constructor)]
-    pub fn new(session_id: String) -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(AgentState::new(session_id))),
-        }
-    }
-
-    /// Wipe the conversation history.
-    #[napi]
-    pub async fn clear_history(&self) {
-        let mut state = self.inner.write().await;
-        state.chat_history.clear();
-    }
-
-    /// How many messages are in the history right now.
-    #[napi]
-    pub async fn get_history_length(&self) -> u32 {
-        let state = self.inner.read().await;
-        state.chat_history.len() as u32
-    }
-
-    /// Retrieve the full history as an array of `Message` objects.
-    #[napi]
-    pub async fn get_history(&self) -> Vec<JsMessage> {
-        let state = self.inner.read().await;
-        state
-            .chat_history
-            .all()
-            .iter()
-            .map(|(msg, _)| JsMessage::from(msg.as_ref()))
-            .collect()
-    }
-}
-
-// ── Agent ──
-
-/// The immutable blueprint — engine, tools, config, hooks.
-///
-/// Built with a fluent chain that mirrors the Rust builder:
-///
-/// ```js
-/// const agent = await Agent.make(engine)
-///   .preamble("You are a helpful assistant.")
-///   .withStandardFormatting()
-///   .withEvictionStrategy({ maxSafeTokens: 4096 });
-/// ```
-///
-/// Each builder step clones the underlying `Agent` (cheap, since all
-/// mutable parts are `Arc`-wrapped), so chaining never mutates the
-/// previous instance.
-#[napi]
+#[napi(js_name = "Agent")]
+#[derive(Clone)]
 pub struct JsAgent {
-    pub(crate) inner: ambi::Agent,
+    pub(crate) inner: Agent,
+}
+
+#[napi(object)]
+pub struct JsEvictionStrategy {
+    pub max_safe_tokens: u32,
 }
 
 #[napi]
 impl JsAgent {
-    // ── Factory ──
-
-    /// Create an Agent from an already-constructed `Engine`.
-    #[napi(factory)]
-    pub async fn make(engine: &JsEngine) -> napi::Result<Self> {
-        let agent = ambi::Agent::from_engine(Arc::clone(&engine.inner));
-        Ok(Self { inner: agent })
-    }
-
-    // ── Builder: System Prompt ──
-
-    /// Set the system prompt (preamble) for this agent.
     #[napi]
-    pub fn preamble(&self, text: String) -> Self {
-        Self {
-            inner: self.inner.clone().preamble(&text),
-        }
-    }
-
-    // ── Builder: Chat Template ──
-
-    /// Pick a template by its well-known name.
-    #[napi]
-    pub fn set_template(&self, template_type: JsChatTemplateType) -> Self {
-        let ty: ambi::types::ChatTemplateType = template_type.into();
-        Self {
-            inner: self.inner.clone().template(ty),
-        }
-    }
-
-    /// Supply a fully custom template — every prefix and suffix, your way.
-    #[napi]
-    pub fn set_custom_template(&self, template: JsChatTemplate) -> Self {
-        let inner = self.inner.clone().template(template);
-        Self { inner }
-    }
-
-    // ── Builder: Eviction ──
-
-    /// Tune how aggressively old messages get evicted when the token
-    /// budget runs low.
-    #[napi]
-    pub fn with_eviction_strategy(&self, strategy: JsEvictionStrategy) -> Self {
-        Self {
-            inner: self.inner.clone().with_eviction_strategy(strategy.into()),
-        }
-    }
-
-    // ── Builder: Formatter ──
-
-    /// Apply the standard stream formatter, which strips tool-call
-    /// syntax and renders think blocks cleanly in real time.
-    #[napi]
-    pub fn with_standard_formatting(&self) -> Self {
-        Self {
-            inner: self.inner.clone().with_standard_formatting(),
-        }
-    }
-
-    // ── Capabilities ──
-
-    /// Evaluate sentence entropy — only works with local engines that
-    /// expose log-probabilities.
-    #[napi]
-    pub async fn evaluate_sentence_entropy(&self, sentence: String) -> napi::Result<f64> {
-        self.inner
-            .evaluate_sentence_entropy(&sentence)
+    pub async fn make(config: &JsLLMEngineConfig) -> Result<JsAgent> {
+        let engine_cfg = {
+            let mut lock = config.inner.lock().map_err(|_| {
+                Error::from_reason("Internal concurrency error: Failed to lock config")
+            })?;
+            lock.take().ok_or_else(|| {
+                Error::from_reason("LLMEngineConfig can only be used once to create an Agent.")
+            })?
+        };
+        let agent = Agent::make(engine_cfg)
             .await
-            .map(|v| v as f64)
-            .map_err(|e| napi::Error::from_reason(e.to_string()))
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        Ok(JsAgent { inner: agent })
+    }
+
+    #[napi]
+    pub fn preamble(&mut self, text: String) -> Self {
+        self.inner = self.inner.clone().preamble(&text);
+        self.clone()
+    }
+
+    #[napi]
+    pub fn template(&mut self, template_type: JsChatTemplateType) -> Self {
+        use ambi::types::ChatTemplateType::*;
+        let ct = match template_type {
+            JsChatTemplateType::Chatml => Chatml,
+            JsChatTemplateType::Llama3 => Llama3,
+            JsChatTemplateType::Gemma => Gemma,
+            JsChatTemplateType::Phi3 => Phi3,
+            JsChatTemplateType::Zephyr => Zephyr,
+            JsChatTemplateType::Deepseek => Deepseek,
+            JsChatTemplateType::Qwen => Qwen,
+            JsChatTemplateType::Mistral => Mistral,
+            JsChatTemplateType::Llama2 => Llama2,
+        };
+        self.inner = self.inner.clone().template(ct);
+        self.clone()
+    }
+
+    #[napi]
+    pub fn custom_template(&mut self, template: JsChatTemplate) -> Self {
+        self.inner = self.inner.clone().template(ChatTemplate::from(&template));
+        self.clone()
+    }
+
+    #[napi]
+    pub fn with_eviction_strategy(&mut self, strategy: JsEvictionStrategy) -> Self {
+        let s = EvictionStrategy {
+            max_safe_tokens: strategy.max_safe_tokens as usize,
+        };
+        self.inner = self.inner.clone().with_eviction_strategy(s);
+        self.clone()
+    }
+
+    #[napi]
+    pub fn max_iterations(&mut self, n: u32) -> Self {
+        self.inner = self.inner.clone().max_iterations(n as usize);
+        self.clone()
+    }
+
+    #[napi]
+    pub fn with_standard_formatting(&mut self) -> Self {
+        self.inner = self.inner.clone().with_standard_formatting();
+        self.clone()
+    }
+
+    #[napi(
+        ts_args_type = "name: string, description: string, parameters_json_str: string, callback: (_err: Error | null, argsJson: string) => string, timeoutSecs?: number, maxRetries?: number, isIdempotent?: boolean"
+    )]
+    #[allow(clippy::too_many_arguments)]
+    pub fn tool(
+        &mut self,
+        name: String,
+        description: String,
+        parameters_json_str: String,
+        callback: Function,
+        timeout_secs: Option<u32>,
+        max_retries: Option<u32>,
+        is_idempotent: Option<bool>,
+    ) -> Result<Self> {
+        let val = callback.value();
+        let tsfn: ThreadsafeFunction<String, String> =
+            unsafe { FromNapiValue::from_napi_value(val.env, val.value)? };
+
+        let parameters: Value = serde_json::from_str(&parameters_json_str)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+
+        let bridge = JsToolBridge {
+            name,
+            description,
+            parameters,
+            timeout_secs: timeout_secs.map(|v| v as u64),
+            max_retries: max_retries.map(|v| v as usize),
+            is_idempotent: is_idempotent.unwrap_or(true),
+            callback: tsfn,
+        };
+
+        self.inner = self
+            .inner
+            .clone()
+            .tool(bridge)
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        Ok(self.clone())
+    }
+
+    #[napi]
+    pub fn with_tool_tags(&mut self, start_tag: String, end_tag: String) -> Self {
+        self.inner = self.inner.clone().with_tool_tags(&start_tag, &end_tag);
+        self.clone()
+    }
+
+    #[napi]
+    pub fn count_tokens(&self, text: String) -> Result<u32> {
+        let engine = self.inner.get_llama_engine();
+        engine
+            .count_tokens(&text)
+            .map(|n| n as u32)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn on_evict(&mut self, callback: Function) -> Result<Self> {
+        let val = callback.value();
+        let tsfn: ThreadsafeFunction<String, String> =
+            unsafe { FromNapiValue::from_napi_value(val.env, val.value)? };
+        self.inner = self.inner.clone().on_evict(move |_state, messages| {
+            let json = serde_json::to_string(&messages).unwrap_or_default();
+            let _ = tsfn.call(
+                Ok(json),
+                napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
+            );
+        });
+        Ok(self.clone())
     }
 }

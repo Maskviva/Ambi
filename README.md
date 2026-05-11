@@ -51,6 +51,33 @@ ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
 Ambi is built on the Tokio async runtime. Ensure your project uses Tokio with `rt-multi-thread` enabled. Without this,
 `Agent::make` and all async methods will not function.
 
+### Bindings
+
+Ambi also provides native bindings for other languages:
+
+**Python** – Install the pre-built wheel from PyPI:
+
+```bash
+pip install ambi-python
+```
+
+```python
+from ambi import Agent, AgentState, Pipeline, LLMEngineConfig
+```
+
+**Node.js** – Install the npm package with prebuilt binaries:
+
+```bash
+npm install ambi-node
+```
+
+```js
+const { Engine, Agent, AgentState, ChatRunner } = require('ambi-node');
+```
+
+> Prebuilt binaries are available for Windows, Linux (glibc & musl), and macOS on x64 & arm64 architectures.
+> No Rust toolchain required on the consuming machine.
+
 <br>
 
 ## Quick start

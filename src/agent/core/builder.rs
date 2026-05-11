@@ -141,6 +141,13 @@ impl Agent {
         self
     }
 
+    /// Sets the maximum number of internal ReAct iterations (LLM -> Tool -> LLM)
+    /// allowed per single user request before forcefully halting.
+    pub fn max_iterations(mut self, n: usize) -> Self {
+        Arc::make_mut(&mut self.config).max_iterations = n;
+        self
+    }
+
     /// # Tooling Assembly
     /// Registers a custom tool to the Agent.
     /// Fails fast and returns an Error if a tool with the same name already exists.
@@ -187,6 +194,15 @@ impl Agent {
     pub fn with_tool_parser<P: ToolCallParser + 'static>(mut self, parser: P) -> Self {
         self.tool_parser = Arc::new(parser);
 
+        self.update_cached_tool_prompt();
+        self
+    }
+
+    /// Syntactic sugar: configures a simple tag-based tool call parser.
+    /// Replaces the default `[TOOL_CALL]` / `[/TOOL_CALL]` tags with custom ones.
+    pub fn with_tool_tags(mut self, start_tag: &str, end_tag: &str) -> Self {
+        use crate::agent::tool::TagToolParser;
+        self.tool_parser = Arc::new(TagToolParser::new(start_tag, end_tag));
         self.update_cached_tool_prompt();
         self
     }

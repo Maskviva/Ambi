@@ -34,6 +34,11 @@ impl ChatHistory {
         self.messages.len()
     }
 
+    /// Returns the current total token count for all messages in history.
+    pub fn total_tokens(&self) -> usize {
+        self.total_tokens
+    }
+
     /// Checks if the chat history contains zero messages.
     pub fn is_empty(&self) -> bool {
         self.messages.is_empty()

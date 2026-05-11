@@ -50,7 +50,8 @@ export default defineConfig({
                     {text: 'Guide', link: '/guide/getting-started'},
                     {text: 'Advanced', link: '/advanced/architecture'},
                     {text: 'Platform', link: '/platform/native'},
-                    {text: 'Extensions', link: '/extensions/ambi-macros'}
+                    {text: 'Extensions', link: '/extensions/ambi-macros'},
+                    {text: 'Bindings', link: '/bindings/node'}
                 ],
 
                 sidebar: {
@@ -76,7 +77,8 @@ export default defineConfig({
                                 {text: 'Custom Pipeline', link: '/advanced/custom-pipeline'},
                                 {text: 'Stream Formatter', link: '/advanced/stream-formatter'},
                                 {text: 'Tool Parser', link: '/advanced/tool-parser'},
-                                {text: 'Context Eviction', link: '/advanced/context-eviction'}
+                                {text: 'Context Eviction', link: '/advanced/context-eviction'},
+                                {text: 'Design Philosophy', link: '/advanced/design-philosophy'}
                             ]
                         }
                     ],
@@ -96,6 +98,15 @@ export default defineConfig({
                                 {text: 'ambi-macros', link: '/extensions/ambi-macros'},
                                 {text: 'ambi-memory', link: '/extensions/ambi-memory'},
                                 {text: 'ambi-pipelines', link: '/extensions/ambi-pipelines'}
+                            ]
+                        }
+                    ],
+                    '/bindings/': [
+                        {
+                            text: 'Language Bindings',
+                            items: [
+                                {text: 'Node.js', link: '/bindings/node'},
+                                {text: 'Python', link: '/bindings/python'}
                             ]
                         }
                     ]
@@ -125,7 +136,8 @@ export default defineConfig({
                     {text: '指南', link: '/zh/guide/getting-started'},
                     {text: '高阶开发', link: '/zh/advanced/architecture'},
                     {text: '平台', link: '/zh/platform/native'},
-                    {text: '扩展', link: '/zh/extensions/ambi-macros'}
+                    {text: '扩展', link: '/zh/extensions/ambi-macros'},
+                    {text: '绑定', link: '/zh/bindings/node'}
                 ],
 
                 sidebar: {
@@ -151,7 +163,8 @@ export default defineConfig({
                                 {text: '自定义管道', link: '/zh/advanced/custom-pipeline'},
                                 {text: '流式格式化器', link: '/zh/advanced/stream-formatter'},
                                 {text: '工具解析器', link: '/zh/advanced/tool-parser'},
-                                {text: '上下文驱逐', link: '/zh/advanced/context-eviction'}
+                                {text: '上下文驱逐', link: '/zh/advanced/context-eviction'},
+                                {text: '设计理念', link: '/zh/advanced/design-philosophy'}
                             ]
                         }
                     ],
@@ -171,6 +184,15 @@ export default defineConfig({
                                 {text: 'ambi-macros', link: '/zh/extensions/ambi-macros'},
                                 {text: 'ambi-memory', link: '/zh/extensions/ambi-memory'},
                                 {text: 'ambi-pipelines', link: '/zh/extensions/ambi-pipelines'}
+                            ]
+                        }
+                    ],
+                    '/zh/bindings/': [
+                        {
+                            text: '语言绑定',
+                            items: [
+                                {text: 'Node.js', link: '/zh/bindings/node'},
+                                {text: 'Python', link: '/zh/bindings/python'}
                             ]
                         }
                     ]

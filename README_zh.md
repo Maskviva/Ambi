@@ -46,6 +46,33 @@ ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
 
 Ambi 构建在 Tokio 异步运行时上。确保你的项目使用启用 `rt-multi-thread` 的 Tokio。否则，`Agent::make` 和所有异步方法将无法工作。
 
+### 其他语言绑定
+
+Ambi 同时提供了其他语言的原生绑定：
+
+**Python** – 从 PyPI 安装预编译的 wheel：
+
+```bash
+pip install ambi-python
+```
+
+```python
+from ambi import Agent, AgentState, Pipeline, LLMEngineConfig
+```
+
+**Node.js** – 使用预构建二进制文件的 npm 包：
+
+```bash
+npm install ambi-node
+```
+
+```js
+const { Engine, Agent, AgentState, ChatRunner } = require('ambi-node');
+```
+
+> 预编译二进制文件支持 Windows、Linux（glibc 和 musl）以及 macOS 的 x64 和 arm64 架构。
+> 使用者无需安装 Rust 工具链。
+
 <br>
 
 ## 快速开始

@@ -8,4 +8,4 @@ pub mod manager;
 pub mod parser;
 
 pub use manager::ToolManager;
-pub use parser::DefaultToolParser;
+pub use parser::{DefaultToolParser, TagToolParser};

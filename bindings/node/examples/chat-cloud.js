@@ -1,42 +1,35 @@
-// @ts-check
-//
-// Minimal cloud agent — the Node equivalent of examples/chat_cloud.rs.
-//
-// Run:
-//   OPENAI_API_KEY=sk-... node examples/chat-cloud.js
+// Import the Ambi Agent and configuration helpers.
+const {Agent, AgentState, Pipeline, LLMEngineConfig, JsChatTemplateType} = require('../lib')
 
-const { JsEngine, JsAgent, JsAgentState, JsChatRunner } = require('..');
+// ---- Basic cloud-based chat example ----
+// 1. Set your API key via the OPENAI_API_KEY environment variable.
+// 2. Run:  OPENAI_API_KEY=sk-... node examples/chat-cloud.js
 
 async function main() {
-  // 1. Build the engine
-  const engine = JsEngine.createOpenai({
-    apiKey: process.env.OPENAI_API_KEY ?? 'sk-your-key',
-    baseUrl: 'https://api.openai.com/v1',
-    modelName: 'gpt-4o-mini',
-    temp: 0.7,
-    topP: 0.9,
-  });
+    // Step 1: Read the API key from the environment.
+    const apiKey = process.env.OPENAI_API_KEY || 'sk-your-key-here'
 
-  // 2. Create the agent (builder pattern, same as Rust)
-  const agent = await JsAgent.make(engine)
-    .preamble('You are a helpful and harmless AI assistant.')
-    .withStandardFormatting();
+    // Step 2: Configure the remote LLM engine (OpenAI-compatible).
+    const engineConfig = LLMEngineConfig.openai({
+        apiKey,
+        baseUrl: 'https://api.openai.com/v1',
+        modelName: 'gpt-4o-mini',
+        temp: 0.7,
+        topP: 0.9,
+    })
 
-  // 3. Per-conversation state
-  const state = new JsAgentState();
+    // Step 3: Create an Agent with a ChatML template and a system prompt.
+    const agent = (await Agent.make(engineConfig))
+        .template(JsChatTemplateType.Chatml)
+        .preamble('You are a helpful and harmless AI assistant.')
 
-  // 4. ReAct loop
-  const runner = new JsChatRunner();
-  const reply = await runner.chat(
-    agent,
-    state,
-    'Who are you and what can you do?',
-  );
+    // Step 4: Create an AgentState and a ChatRunner.
+    const state = new AgentState('chat-cloud-demo')
+    const runner = Pipeline.chatRunner(5)
 
-  console.log(reply);
+    // Step 5: Send a chat message and print the result.
+    const response = await runner.chat(agent, state, 'Who are you and what can you do?')
+    console.log(response)
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main().catch(console.error)

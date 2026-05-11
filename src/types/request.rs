@@ -6,7 +6,7 @@ use super::{Message, ToolDefinition};
 use std::sync::Arc;
 
 /// The standard payload compiled by the Agent and sent to the LLM engine.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct LLMRequest {
     /// The aggregated system preamble.
     pub system_prompt: String,

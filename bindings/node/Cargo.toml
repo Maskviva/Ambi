@@ -7,9 +7,14 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-ambi = { path = "../../" }
 napi = { version = "3.8.6", default-features = false, features = ["napi4", "async", "tokio_rt", "serde-json"] }
 napi-derive = "3.5.5"
+ambi = { path = "../../", default-features = false, features = ["openai-api"] }
 tokio = { version = "1", features = ["full"] }
-tokio-stream = "0.1"
-serde_json = "1.0"
+tokio-stream = "0.1.15"
+futures = "0.3.30"
+serde_json = "1.0.115"
+async-trait = "0.1.80"
+
+[build-dependencies]
+napi-build = "2.1.3"

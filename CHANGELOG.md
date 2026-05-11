@@ -6,8 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
 # Changelog
+
+## [0.3.7] — 2026-05-11
+
+### New Features
+
+- **Python Bindings** (`bindings/python/`) — Brand-new native Python extension
+  built with maturin/PyO3. Exposes the full Agent API:
+  - `Agent.make()`, `AgentState`, `Pipeline`, `LLMEngineConfig`
+  - `resolve_request()` for custom engine asynchronous callbacks
+  - `build_tool()` helper in `_tool_helpers.py` for ergonomic tool registration
+  - Built-in template functions: `chatml_template()`, `deepseek_template()`,
+    `llama3_template()`, `qwen_template()`, etc.
+  - 6 ready-to-run examples covering chat, streaming, custom engines,
+    custom templates, tool calling, and memory eviction.
+
+- **Node.js Bindings Refactor** — Complete restructuring of the Node binding:
+  - New `bindings/node/lib/` layer providing a polished JavaScript API
+    (`Agent`, `LLMEngineConfig`, `Pipeline`, `ChatStream`) over the
+    NAPI-RS generated types.
+
+### Maintenance
+
+- Version bump: 0.3.6 → 0.3.7.
 
 ## [0.3.6] — 2026-05-05
 
