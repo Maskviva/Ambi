@@ -1,10 +1,11 @@
 # ambi-macros
 
-`ambi-macros` is a procedural macro crate that eliminates boilerplate when defining tools and agents. It is shipped as a separate sub-crate and exposed through the `macro` feature flag of the main `ambi` crate.
+`ambi-macros` is a standalone procedural macro crate that eliminates boilerplate when defining tools and agents.
 
 ```toml
 [dependencies]
-ambi = { version = "0.3", features = ["openai-api", "macro"] }
+ambi = "0.3"
+ambi-macros = "0.1"
 ```
 
 ---
@@ -16,7 +17,7 @@ Instead of manually implementing the `Tool` trait (defining `Args`, `Output`, `T
 ### Basic usage
 
 ```rust
-use ambi::macros::tool;
+use ambi_macros::tool;
 use ambi::types::ToolErr;
 
 #[tool(name = "search_docs", description = "Search documentation")]
@@ -128,7 +129,7 @@ impl ::ambi::types::Tool for SearchDocsTool {
 The `#[agent]` macro generates a complete Agent wrapper struct with a fluent builder, removing all manual wiring.
 
 ```rust
-use ambi::macros::{agent, tool};
+use ambi_macros::{agent, tool};
 use ambi::types::ToolErr;
 
 #[tool(name = "add", timeout = 10, idempotent)]
@@ -209,24 +210,24 @@ let assistant = DevAgent::builder(engine_config, MyCustomPipeline)
 
 ---
 
-## Feature flag
+## Adding as a dependency
 
-Add `"macro"` to your `ambi` dependency features:
+`ambi-macros` is a standalone crate. Add it alongside `ambi`:
 
 ```toml
 [dependencies]
-ambi = { version = "0.3", features = ["openai-api", "macro"] }
+ambi = "0.3"
+ambi-macros = "0.1"
 ```
 
-The `macro` feature re-exports `ambi_macros` as `ambi::macros`, so you can use:
-
-```rust
-use ambi::macros::tool;
-use ambi::macros::agent;
+```bash
+# Or via cargo-add:
+cargo add ambi-macros
 ```
 
-Or equivalently:
+Then import macros directly:
 
 ```rust
-use ambi::macros::{tool, agent};
+use ambi_macros::tool;
+use ambi_macros::agent;
 ```

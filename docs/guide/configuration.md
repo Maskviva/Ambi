@@ -104,7 +104,6 @@ ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
 | `vulkan`    | Vulkan acceleration                               | + Vulkan SDK                   |
 | `metal`     | Apple Metal acceleration                          | + Metal framework               |
 | `rocm`      | AMD ROCm acceleration                             | + ROCm                         |
-| `macro`     | `#[tool]` and `#[agent]` attribute macros (see [ambi-macros](/extensions/ambi-macros)) | `ambi-macros`                  |
 | `mtmd`      | Multimodal support for Llama (VLM)                | + `base64`                     |
 
 You cannot enable more than one GPU backend at once – there's a compile-time `compile_error!` guard for this.

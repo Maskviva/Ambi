@@ -6,7 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-# Changelog
+
+## [0.3.8] — 2026-05-13
+
+### New Features
+
+- **Engine Trait Refactoring** — Replaced the generic `evaluate_sentence_entropy` on
+  `LLMEngineTrait` with a typed `as_any()` downcasting mechanism:
+  - Added `impl_as_any!()` macro to reduce boilerplate across all engine backends.
+  - Added `backend_downcast_ref::<T>()` method on `LLMEngine` for safe, direct access
+    to concrete engine types (e.g., `LlamaEngine`, `OpenAIEngine`, custom engines).
+  - Added `'static` bound to `LLMEngineTrait` to enable safe downcasting.
+
+- **Agent Public API Expansion** — New accessor methods on `Agent`:
+  - `get_config()` — Read-only access to `AgentConfig`.
+  - `get_tool_map()` — Inspect all registered tools at runtime.
+  - `get_cached_tool_prompt()` — Access the formatted tool description string.
+  - `get_llama_engine()` — Direct handle to the underlying `Arc<LLMEngine>`.
+
+### Improvements
+
+- **Python Bindings** — Added `impl_as_any!()` to `PyEngineBridge` for proper
+  `LLMEngineTrait` compliance.
+- **Node.js Bindings** — Added `tool.rs` module completing the Rust source decomposition;
+  formatting polish across `config.rs`, `engine.rs`, `pipeline.rs`.
+- **Code Quality** — Applied consistent rustfmt across engine, agent core, pipeline,
+  binding sources, and example files; reordered imports in ambi-pipelines submodules.
+- **Examples** — Updated `custom_model_back.rs` example and `local_text.rs` test to
+  use the new `backend_downcast_ref` API.
+- **Documentation** — Updated English and Chinese docs for bindings (node.md, python.md),
+  advanced topics (custom-engine.md, design-philosophy.md), extensions
+  (ambi-macros.md, ambi-memory.md, ambi-pipelines.md), and guide (configuration.md,
+  tools.md).
+
+### Maintenance
+
+- Version bump: 0.3.7 → 0.3.8.
+- Removed deprecated `evaluate_sentence_entropy` from `LLMEngineTrait` and `Agent`;
+  entropy evaluation is now available only via `LlamaEngine::evaluate_sentence_entropy`.
 
 ## [0.3.7] — 2026-05-11
 

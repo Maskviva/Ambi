@@ -104,7 +104,6 @@ ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
 | `vulkan` | Vulkan 加速 | + Vulkan SDK |
 | `metal` | Apple Metal 加速 | + Metal framework |
 | `rocm` | AMD ROCm 加速 | + ROCm |
-| `macro` | `#[tool]` 和 `#[agent]` 属性宏（参见 [ambi-macros](/zh/extensions/ambi-macros)） | `ambi-macros` |
 | `mtmd` | Llama 多模态支持 (VLM) | + `base64` |
 
 编译时不能同时启用两个 GPU 后端——有一个 `compile_error!` 守卫。

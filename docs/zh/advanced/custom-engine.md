@@ -23,6 +23,8 @@ struct MockEngine {
 
 #[async_trait]
 impl LLMEngineTrait for MockEngine {
+    impl_as_any!(); // 引擎向下转型所需
+
     async fn chat(&self, _request: LLMRequest) -> Result<String> {
         Ok(self.reply.clone())
     }
@@ -51,7 +53,7 @@ impl LLMEngineTrait for MockEngine {
 | 方法 | 默认行为 | 什么情况要覆盖 |
 |------|---------|---------------|
 | `supports_multimodal()` | 返回 `false` | 你的引擎支持图片输入 |
-| `evaluate_sentence_entropy()` | 返回 `EngineError` | 你的引擎能计算 token 级别的不确定性 |
+| `as_any()` | Panics | 通过 `impl_as_any!()` 实现，用于向下转型到具体类型 |
 
 ## 使用自定义引擎
 

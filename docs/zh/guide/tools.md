@@ -74,13 +74,10 @@ let agent = Agent::make(config).await?
 
 ## 用 `#[tool]` 宏
 
-启用 `macro` 特性之后，可以直接在函数上标注来减少样板代码，无需手动实现 trait。
+添加 `ambi-macros` crate 后，可以直接在函数上标注来减少样板代码，无需手动实现 trait。
 
-在 `Cargo.toml` 中启用：
-
-```toml
-[dependencies]
-ambi = { version = "0.3", features = ["openai-api", "macro"] }
+```bash
+cargo add ambi-macros
 ```
 
 完整的 `#[tool]` 和 `#[agent]` 宏文档请参阅 [ambi-macros](/zh/extensions/ambi-macros)，包含参数描述、类型推断和生成代码示例等细节。

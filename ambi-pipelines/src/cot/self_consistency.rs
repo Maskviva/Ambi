@@ -4,10 +4,10 @@
 //! from each, and selects the most frequent one via majority voting.
 
 use super::traits::{Aggregator, AnswerExtractor, MajorityVoting};
-use ambi::ContentPart;
 use ambi::agent::core::{Agent, AgentState};
 use ambi::agent::pipeline::{ChatRunner, Pipeline};
 use ambi::error::{AmbiError, Result};
+use ambi::ContentPart;
 
 use futures::future::join_all;
 use std::pin::Pin;

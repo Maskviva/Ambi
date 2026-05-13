@@ -74,13 +74,10 @@ Tool names must be unique. If you register two tools with the same name, `tool()
 
 ## Using the `#[tool]` macro
 
-If you enable the `macro` feature, you can reduce boilerplate by annotating functions directly — no manual trait impl needed.
+If you add the `ambi-macros` crate, you can reduce boilerplate by annotating functions directly — no manual trait impl needed.
 
-Enable it in your `Cargo.toml`:
-
-```toml
-[dependencies]
-ambi = { version = "0.3", features = ["openai-api", "macro"] }
+```bash
+cargo add ambi-macros
 ```
 
 See [ambi-macros](/extensions/ambi-macros) for full documentation on the `#[tool]` and `#[agent]` macros, including parameter descriptions, type inference, and generated code examples.

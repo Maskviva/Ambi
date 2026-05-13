@@ -1,6 +1,7 @@
 #[cfg(all(test, feature = "llama-cpp"))]
 mod tests {
     use ambi::llm::providers::llama_cpp::config::LlamaEngineConfig;
+    use ambi::llm::providers::llama_cpp::LlamaEngine;
     use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
     use std::io::Write;
     use tokio_stream::StreamExt;
@@ -53,7 +54,13 @@ mod tests {
 
         println!();
 
-        let entropy = agent.evaluate_sentence_entropy(&*res_buffe).await.unwrap();
+        let entropy = agent
+            .get_llama_engine()
+            .backend_downcast_ref::<LlamaEngine>()
+            .unwrap()
+            .evaluate_sentence_entropy(&*res_buffe)
+            .await
+            .unwrap();
 
         println!("{}", entropy)
     }

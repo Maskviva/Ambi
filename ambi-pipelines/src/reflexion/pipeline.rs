@@ -1,10 +1,10 @@
 //! Reflexion pipeline implementation — Actor-Evaluator loop with persistent critique memory.
 
 use super::traits::Evaluator;
-use ambi::ContentPart;
 use ambi::agent::core::{Agent, AgentState};
 use ambi::agent::pipeline::{ChatRunner, Pipeline};
 use ambi::error::{AmbiError, Result};
+use ambi::ContentPart;
 
 use ambi_memory::{AgentStateMemoryExt, KvMemoryProvider};
 

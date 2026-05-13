@@ -39,7 +39,7 @@ pub enum LLMEngineConfig {
 /// `Agent::make(LLMEngineConfig::Custom(backend)).await`.
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
-pub trait LLMEngineTrait: SendSync {
+pub trait LLMEngineTrait: SendSync + 'static {
     /// Executes a complete synchronous chat inference, returning the full
     /// response string (including raw text for tool calls).
     async fn chat(&self, request: LLMRequest) -> Result<String>;
@@ -62,14 +62,34 @@ pub trait LLMEngineTrait: SendSync {
         false
     }
 
-    /// Evaluates the information entropy of a sentence.
-    ///
-    /// Currently only effective in supported local engines (e.g., Llama-cpp).
-    async fn evaluate_sentence_entropy(&self, _sentence: &str) -> Result<f32> {
-        Err(AmbiError::EngineError(
-            "The current engine backend does not support entropy evaluation.".to_string(),
-        ))
-    }
+    /// Returns a reference to the underlying engine backend.
+    fn as_any(&self) -> &dyn std::any::Any;
+}
+
+/// Macro: Automatically generates boilerplate code for the `as_any` method in implementations of `LLMEngineTrait`.
+///
+/// Since `Self` in Rust trait default methods is `?Sized` by default,
+/// it is not possible to provide a default implementation for `fn as_any(&self) -> &dyn Any` in the trait definition.
+/// Therefore, this macro automatically expands in each `impl LLMEngineTrait` block.
+///
+/// # Examples
+///
+/// ```ignore
+/// impl LLMEngineTrait for MyEngine {
+/// impl_as_any!();
+///
+/// async fn chat(&self, request: LLMRequest) -> Result<String> {
+/// // ...
+/// }
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_as_any {
+    () => {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    };
 }
 
 /// # Engine Wrapper
@@ -172,13 +192,6 @@ impl LLMEngine {
         self.backend.reset_context();
     }
 
-    /// Evaluates the information entropy of a sentence.
-    ///
-    /// Currently only effective in supported local engines (e.g., Llama-cpp).
-    pub async fn evaluate_sentence_entropy(&self, sentence: &str) -> Result<f32> {
-        self.backend.evaluate_sentence_entropy(sentence).await
-    }
-
     /// Declares whether the engine backend supports multimodal input (image parsing).
     ///
     /// If `false`, the framework will perform a fail-fast interception when
@@ -190,5 +203,15 @@ impl LLMEngine {
     /// Fast, purely synchronous token calculation to support the Agent's memory eviction algorithm.
     pub fn count_tokens(&self, text: &str) -> Result<usize> {
         self.tokenizer.count_tokens(text)
+    }
+
+    /// Downcasts the engine backend to a concrete type.
+    pub fn backend_downcast_ref<T: 'static>(&self) -> Result<&T> {
+        self.backend.as_any().downcast_ref::<T>().ok_or_else(|| {
+            AmbiError::EngineError(format!(
+                "Backend is not of type {}",
+                std::any::type_name::<T>()
+            ))
+        })
     }
 }

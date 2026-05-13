@@ -24,9 +24,11 @@ use tokio_stream::StreamExt;
 // ---------------------------------------------------------------------------
 static NEXT_PIPELINE_ID: AtomicU64 = AtomicU64::new(1);
 
-fn pending_pipeline_requests() -> &'static std::sync::Mutex<HashMap<String, oneshot::Sender<String>>> {
-    static PENDING: std::sync::OnceLock<std::sync::Mutex<HashMap<String, oneshot::Sender<String>>>> =
-        std::sync::OnceLock::new();
+fn pending_pipeline_requests() -> &'static std::sync::Mutex<HashMap<String, oneshot::Sender<String>>>
+{
+    static PENDING: std::sync::OnceLock<
+        std::sync::Mutex<HashMap<String, oneshot::Sender<String>>>,
+    > = std::sync::OnceLock::new();
     PENDING.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
@@ -37,7 +39,9 @@ pub fn resolve_pipeline_request(request_id: String, result: String) -> napi::Res
         .lock()
         .map_err(|e| Error::from_reason(format!("Lock error: {}", e)))?
         .remove(&request_id)
-        .ok_or_else(|| Error::from_reason(format!("Unknown pipeline request id: {}", request_id)))?;
+        .ok_or_else(|| {
+            Error::from_reason(format!("Unknown pipeline request id: {}", request_id))
+        })?;
     sender
         .send(result)
         .map_err(|_| Error::from_reason("Receiver dropped"))?;

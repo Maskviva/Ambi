@@ -1,8 +1,8 @@
 // Import necessary dependencies from the Ambi framework.
 use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
+use ambi::macros::{agent, tool};
 use ambi::types::ToolErr;
 use ambi::LLMEngineConfig;
-use ambi_macros::{agent, tool};
 use anyhow::Result;
 
 //！ A simple arithmetic tool that returns the sum of two integers.

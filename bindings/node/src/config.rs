@@ -39,7 +39,10 @@ impl JsLLMEngineConfig {
         }
     }
 
-    #[napi(factory, ts_args_type = "chatHandler: (_err: Error | null, argsJson: string) => void, supportsMultimodal?: boolean, chatStreamHandler?: (_err: Error | null, argsJson: string) => void")]
+    #[napi(
+        factory,
+        ts_args_type = "chatHandler: (_err: Error | null, argsJson: string) => void, supportsMultimodal?: boolean, chatStreamHandler?: (_err: Error | null, argsJson: string) => void"
+    )]
     pub fn custom(
         chat_handler: Function,
         supports_multimodal: Option<bool>,
@@ -51,9 +54,7 @@ impl JsLLMEngineConfig {
 
         let stream_tsfn = if let Some(sh) = chat_stream_handler {
             let val = sh.value();
-            Some(unsafe {
-                FromNapiValue::from_napi_value(val.env, val.value)?
-            })
+            Some(unsafe { FromNapiValue::from_napi_value(val.env, val.value)? })
         } else {
             None
         };

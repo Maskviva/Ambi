@@ -1,10 +1,10 @@
 //! Breadth-First Search (BFS) beam search pipeline for Tree of Thoughts.
 
 use super::traits::{Evaluation, TotEvaluator, TotExpander};
-use ambi::ContentPart;
 use ambi::agent::core::{Agent, AgentState};
 use ambi::agent::pipeline::{ChatRunner, Pipeline};
 use ambi::error::{AmbiError, Result};
+use ambi::ContentPart;
 
 use futures::future::join_all;
 use std::pin::Pin;

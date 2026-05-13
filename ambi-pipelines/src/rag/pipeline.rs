@@ -5,10 +5,10 @@
 
 use super::packing::ContextPacker;
 use super::retriever::Retriever;
-use ambi::ContentPart;
 use ambi::agent::core::{Agent, AgentState};
 use ambi::agent::pipeline::{ChatRunner, Pipeline};
 use ambi::error::{AmbiError, Result};
+use ambi::ContentPart;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;

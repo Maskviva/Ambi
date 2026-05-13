@@ -142,12 +142,6 @@ impl AgentState {
 }
 
 impl Agent {
-    /// Evaluates the information entropy (uncertainty) of a specific sentence.
-    /// Only works if the underlying engine supports it (e.g., Llama.cpp).
-    pub async fn evaluate_sentence_entropy(&self, sentence: &str) -> crate::error::Result<f32> {
-        self.llm_engine.evaluate_sentence_entropy(sentence).await
-    }
-
     /// Returns a cloned `Arc` to the underlying [`LLMEngine`].
     ///
     /// This provides direct access to the engine (e.g., for custom inference calls,
@@ -160,5 +154,74 @@ impl Agent {
     /// the same engine handle.
     pub fn get_llama_engine(&self) -> Arc<LLMEngine> {
         self.llm_engine.clone()
+    }
+
+    /// Returns a cloned `Arc` to the [`AgentConfig`] instance.
+    ///
+    /// This provides read-only access to the agent's configuration parameters,
+    /// such as model settings, inference parameters, and behavior flags.
+    /// The returned `Arc` can be safely shared across threads without
+    /// cloning the configuration data.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let config = agent.get_config();
+    /// println!("Model temperature: {}", config.temperature);
+    /// ```
+    pub fn get_config(&self) -> Arc<AgentConfig> {
+        self.config.clone()
+    }
+
+    /// Returns a cloned `Arc` to the tool registry [`HashMap`].
+    ///
+    /// The returned map contains all available tools registered with this agent,
+    /// keyed by their unique identifiers. Each tool is wrapped in an `Arc`
+    /// and dynamically typed via [`DynToolObj`] for runtime dispatch.
+    ///
+    /// This is useful for inspecting available tools, checking tool metadata,
+    /// or performing custom tool dispatch logic outside the standard agent flow.
+    ///
+    /// # Note
+    ///
+    /// The returned map is a snapshot at the time of cloning. Adding new tools
+    /// to the agent after this call will not be reflected in the returned map.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let tool_map = agent.get_tool_map();
+    /// for (name, tool) in tool_map.iter() {
+    ///     println!("Available tool: {}", name);
+    /// }
+    /// ```
+    pub fn get_tool_map(&self) -> Arc<HashMap<String, Arc<DynToolObj>>> {
+        self.tool_map.clone()
+    }
+
+    /// Returns a cloned `Arc` to the pre-formatted tool prompt string.
+    ///
+    /// The returned string contains a formatted description of all available tools,
+    /// typically used as part of the system prompt to inform the LLM about
+    /// available functionality. This is cached to avoid re-formatting on each
+    /// inference call.
+    ///
+    /// This is primarily useful for debugging, prompt engineering, or
+    /// constructing custom prompts that incorporate the tool descriptions.
+    ///
+    /// # Note
+    ///
+    /// The cached prompt is regenerated when tools are added or removed from
+    /// the agent. Multiple clones of the same `Arc` will share the underlying
+    /// string data.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let tool_prompt = agent.get_cached_tool_prompt();
+    /// println!("Tool prompt preview: {}", &tool_prompt[0..100]);
+    /// ```
+    pub fn get_cached_tool_prompt(&self) -> Arc<String> {
+        self.cached_tool_prompt.clone()
     }
 }

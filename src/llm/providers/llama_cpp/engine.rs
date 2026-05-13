@@ -4,6 +4,7 @@ use super::command::LlamaCommand;
 use super::config::LlamaEngineConfig;
 use super::thread;
 use crate::error::Result;
+use crate::impl_as_any;
 use crate::llm::LLMEngineTrait;
 use crate::types::LLMRequest;
 use async_trait::async_trait;
@@ -61,6 +62,11 @@ impl LlamaEngine {
     pub fn is_alive(&self) -> bool {
         self.alive.load(Ordering::SeqCst)
     }
+
+    /// Evaluates the entropy of a sentence.
+    pub async fn evaluate_sentence_entropy(&self, sentence: &str) -> Result<f32> {
+        self.evaluate_sentence_entropy_internal(sentence).await
+    }
 }
 
 impl Drop for LlamaEngine {
@@ -74,6 +80,8 @@ impl Drop for LlamaEngine {
 
 #[async_trait]
 impl LLMEngineTrait for LlamaEngine {
+    impl_as_any!();
+
     async fn chat(&self, request: LLMRequest) -> Result<String> {
         self.chat_internal(&request.formatted_prompt, request.images)
             .await
@@ -90,9 +98,5 @@ impl LLMEngineTrait for LlamaEngine {
 
     fn supports_multimodal(&self) -> bool {
         self._supports_multimodal
-    }
-
-    async fn evaluate_sentence_entropy(&self, sentence: &str) -> Result<f32> {
-        self.evaluate_sentence_entropy_internal(sentence).await
     }
 }

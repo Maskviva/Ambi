@@ -8,6 +8,7 @@ pub mod translator;
 
 use self::config::OpenAIEngineConfig;
 use crate::error::Result;
+use crate::impl_as_any;
 use crate::llm::LLMEngineTrait;
 use crate::types::LLMRequest;
 use async_openai::config::OpenAIConfig;
@@ -39,6 +40,8 @@ impl OpenAIEngine {
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl LLMEngineTrait for OpenAIEngine {
+    impl_as_any!();
+
     async fn chat(&self, request: LLMRequest) -> Result<String> {
         self.generate_response_sync(request).await
     }

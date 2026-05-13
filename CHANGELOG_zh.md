@@ -7,7 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-# 更新日志
+## [0.3.8] — 2026-05-13
+
+### 新功能
+
+- **引擎 Trait 重构** — 将通用的 `evaluate_sentence_entropy` 从 `LLMEngineTrait` 替换为类型化的
+  `as_any()` 向下转型机制：
+  - 新增 `impl_as_any!()` 宏，减少所有引擎后端的样板代码。
+  - 新增 `LLMEngine::backend_downcast_ref::<T>()` 方法，安全直接地访问具体引擎类型
+    （如 `LlamaEngine`、`OpenAIEngine`、自定义引擎）。
+  - 为 `LLMEngineTrait` 添加 `'static` 约束，确保安全的向下转型。
+
+- **Agent 公共 API 扩展** — Agent 新增以下访问器方法：
+  - `get_config()` — 只读访问 `AgentConfig`。
+  - `get_tool_map()` — 运行时检查所有已注册工具。
+  - `get_cached_tool_prompt()` — 获取已格式化的工具描述字符串。
+  - `get_llama_engine()` — 获取底层 `Arc<LLMEngine>` 的直接句柄。
+
+### 改进
+
+- **Python 绑定** — 为 `PyEngineBridge` 添加 `impl_as_any!()`，确保 `LLMEngineTrait` 的正确实现。
+- **Node.js 绑定** — 新增 `tool.rs` 模块，完成 Rust 源文件拆分；对 `config.rs`、`engine.rs`、`pipeline.rs`
+  进行格式化整理。
+- **代码质量** — 对引擎、Agent 核心、管道、绑定源码和示例文件统一应用 rustfmt 格式；
+  调整 ambi-pipelines 子模块的导入顺序。
+- **示例** — 更新 `custom_model_back.rs` 示例和 `local_text.rs` 测试，使用新的 `backend_downcast_ref` API。
+- **文档** — 更新中英文绑定文档（node.md、python.md）、高级主题（custom-engine.md、design-philosophy.md）、
+  扩展模块（ambi-macros.md、ambi-memory.md、ambi-pipelines.md）和指南（configuration.md、tools.md）。
+
+### 维护
+
+- 版本升级：0.3.7 → 0.3.8。
+- 从 `LLMEngineTrait` 和 `Agent` 中移除已废弃的 `evaluate_sentence_entropy`；
+  熵评估现在仅可通过 `LlamaEngine::evaluate_sentence_entropy` 使用。
 
 ## [0.3.7] — 2026-05-11
 

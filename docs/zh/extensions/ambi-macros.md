@@ -1,10 +1,11 @@
 # ambi-macros
 
-`ambi-macros` 是 Ambi 的过程宏子库，用于消除定义工具和 Agent 时的样板代码。通过主库的 `macro` 特性标志启用。
+`ambi-macros` 是 Ambi 的过程宏子库，用于消除定义工具和 Agent 时的样板代码。
 
 ```toml
 [dependencies]
-ambi = { version = "0.3", features = ["openai-api", "macro"] }
+ambi = "0.3"
+ambi-macros = "0.1"
 ```
 
 ---
@@ -16,7 +17,7 @@ ambi = { version = "0.3", features = ["openai-api", "macro"] }
 ### 基本用法
 
 ```rust
-use ambi::macros::tool;
+use ambi_macros::tool;
 use ambi::types::ToolErr;
 
 #[tool(name = "search_docs", description = "搜索文档")]
@@ -116,7 +117,7 @@ impl ::ambi::types::Tool for SearchDocsTool {
 `#[agent]` 宏生成一个完整的 Agent 包装结构体，附带流式构建器，消除所有手动接线。
 
 ```rust
-use ambi::macros::{agent, tool};
+use ambi_macros::{agent, tool};
 use ambi::types::ToolErr;
 
 #[tool(name = "add", timeout = 10, idempotent)]
@@ -197,24 +198,24 @@ let assistant = DevAgent::builder(engine_config, MyCustomPipeline)
 
 ---
 
-## 特性标志
+## 添加依赖
 
-在 `ambi` 依赖特性中添加 `"macro"`：
+`ambi-macros` 是独立子库，需要与 `ambi` 分开添加：
 
 ```toml
 [dependencies]
-ambi = { version = "0.3", features = ["openai-api", "macro"] }
+ambi = "0.3"
+ambi-macros = "0.1"
 ```
 
-启用后，`ambi::macros` 模块会重导出所有过程宏：
-
-```rust
-use ambi::macros::tool;
-use ambi::macros::agent;
+```bash
+# 或通过 cargo-add：
+cargo add ambi-macros
 ```
 
-或等效：
+然后直接导入宏：
 
 ```rust
-use ambi::macros::{tool, agent};
+use ambi_macros::tool;
+use ambi_macros::agent;
 ```

@@ -1,13 +1,14 @@
 // bindings/node/src/engine.rs
 use ambi::error::AmbiError;
+use ambi::impl_as_any;
 use ambi::llm::LLMEngineTrait;
 use ambi::types::LLMRequest;
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 
@@ -47,6 +48,8 @@ pub struct JsEngineBridge {
 
 #[async_trait::async_trait]
 impl LLMEngineTrait for JsEngineBridge {
+    impl_as_any!();
+
     async fn chat(&self, request: LLMRequest) -> ambi::error::Result<String> {
         let request_id = NEXT_ID.fetch_add(1, Ordering::Relaxed).to_string();
         let payload = serde_json::json!({
@@ -61,7 +64,8 @@ impl LLMEngineTrait for JsEngineBridge {
             .map_err(|e| AmbiError::EngineError(e.to_string()))?
             .insert(request_id, tx);
 
-        self.chat_fn.call(Ok(req_json), ThreadsafeFunctionCallMode::NonBlocking);
+        self.chat_fn
+            .call(Ok(req_json), ThreadsafeFunctionCallMode::NonBlocking);
 
         rx.await
             .map_err(|_| AmbiError::EngineError("JS callback channel closed".into()))

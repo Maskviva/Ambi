@@ -6,7 +6,7 @@ use ambi::llm::LLMEngineTrait;
 use ambi::types::{
     ChatTemplate, ChatTemplateType, ContentPart, LLMRequest, Tool, ToolDefinition, ToolErr,
 };
-use ambi::{ChatRunner, LLMEngineConfig};
+use ambi::{impl_as_any, ChatRunner, LLMEngineConfig};
 use async_trait::async_trait;
 use futures::StreamExt;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -151,6 +151,8 @@ unsafe impl Sync for PyEngineBridge {}
 
 #[async_trait]
 impl LLMEngineTrait for PyEngineBridge {
+    impl_as_any!();
+
     async fn chat(&self, request: LLMRequest) -> Result<String, AmbiError> {
         let request_id = NEXT_REQ_ID.fetch_add(1, Ordering::Relaxed).to_string();
         let payload = serde_json::json!({ "request_id": request_id, "request": request });

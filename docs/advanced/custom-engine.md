@@ -23,6 +23,8 @@ struct MockEngine {
 
 #[async_trait]
 impl LLMEngineTrait for MockEngine {
+    impl_as_any!(); // required for engine downcasting
+
     async fn chat(&self, _request: LLMRequest) -> Result<String> {
         Ok(self.reply.clone())
     }
@@ -52,7 +54,7 @@ impl LLMEngineTrait for MockEngine {
 | Method | Default | Override when... |
 |--------|---------|-----------------|
 | `supports_multimodal()` | `false` | Your engine handles images |
-| `evaluate_sentence_entropy()` | Returns `EngineError` | Your engine can compute token-level uncertainty |
+| `as_any()` | Panics | Implement via `impl_as_any!()` for downcasting to concrete type |
 
 ## Using the custom engine
 

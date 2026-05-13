@@ -2,7 +2,7 @@
 use ambi::error::Result;
 use ambi::llm::LLMEngineTrait;
 use ambi::types::LLMRequest;
-use ambi::{Agent, LLMEngineConfig};
+use ambi::{impl_as_any, Agent, LLMEngineConfig};
 use async_trait::async_trait;
 
 // Step 1: Define the configuration and state structure for your custom engine.
@@ -15,6 +15,8 @@ struct MyCompanyEngine {
 // The `#[async_trait]` macro is required because trait methods contain async operations.
 #[async_trait]
 impl LLMEngineTrait for MyCompanyEngine {
+    impl_as_any!(); // This macro is required to implement the `as_any` method.
+
     // Implement the synchronous/non-streaming chat method.
     async fn chat(&self, _request: LLMRequest) -> Result<String> {
         // Here, you would typically make an HTTP request using `request.formatted_prompt`.
