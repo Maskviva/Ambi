@@ -43,6 +43,7 @@ pub mod wasm_api {
                 model_name,
                 temp: 0.7,
                 top_p: 0.95,
+                supports_vision: false,
             };
 
             // 2. Build the Agent

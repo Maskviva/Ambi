@@ -36,6 +36,7 @@
 //!         model_name: "gpt-4o".to_string(),
 //!         temp: 0.7,
 //!         top_p: 0.95,
+//!         supports_vision: false,
 //!     };
 //!
 //!     // 2. Build the Agent

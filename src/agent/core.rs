@@ -177,9 +177,14 @@ impl Agent {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
+    /// # use ambi::Agent;
+    /// # #[allow(dead_code)]
+    /// # fn demo(agent: &Agent) {
     /// let config = agent.get_config();
-    /// println!("Model temperature: {}", config.temperature);
+    /// println!("Max iterations: {}", config.max_iterations);
+    /// println!("Max safe tokens: {}", config.eviction_strategy.max_safe_tokens);
+    /// # }
     /// ```
     pub fn get_config(&self) -> Arc<AgentConfig> {
         self.config.clone()
@@ -201,11 +206,15 @@ impl Agent {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
+    /// # use ambi::Agent;
+    /// # #[allow(dead_code)]
+    /// # fn demo(agent: &Agent) {
     /// let tool_map = agent.get_tool_map();
-    /// for (name, tool) in tool_map.iter() {
+    /// for name in tool_map.keys() {
     ///     println!("Available tool: {}", name);
     /// }
+    /// # }
     /// ```
     pub fn get_tool_map(&self) -> Arc<HashMap<String, Arc<DynToolObj>>> {
         self.tool_map.clone()
@@ -229,9 +238,14 @@ impl Agent {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
+    /// # use ambi::Agent;
+    /// # #[allow(dead_code)]
+    /// # fn demo(agent: &Agent) {
     /// let tool_prompt = agent.get_cached_tool_prompt();
-    /// println!("Tool prompt preview: {}", &tool_prompt[0..100]);
+    /// let preview: String = tool_prompt.chars().take(100).collect();
+    /// println!("Tool prompt preview: {}", preview);
+    /// # }
     /// ```
     pub fn get_cached_tool_prompt(&self) -> Arc<String> {
         self.cached_tool_prompt.clone()
