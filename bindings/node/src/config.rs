@@ -14,6 +14,7 @@ pub struct JsOpenAIEngineConfig {
     pub base_url: Option<String>,
     pub temp: Option<f64>,
     pub top_p: Option<f64>,
+    pub supports_vision: Option<bool>,
 }
 
 #[napi(js_name = "LLMEngineConfig")]
@@ -33,6 +34,7 @@ impl JsLLMEngineConfig {
             model_name: config.model_name,
             temp: config.temp.unwrap_or(0.0) as f32,
             top_p: config.top_p.unwrap_or(0.0) as f32,
+            supports_vision: config.supports_vision.unwrap_or(false),
         };
         Self {
             inner: Mutex::new(Some(LLMEngineConfig::OpenAI(cfg))),

@@ -2,64 +2,60 @@
 
 use super::session::InferenceSession;
 use crate::error::{AmbiError, Result};
-use llama_cpp_2::context::LlamaContext;
+use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
-use llama_cpp_2::model::{AddBos, LlamaModel};
+use llama_cpp_2::model::LlamaModel;
 
 impl InferenceSession {
-    /// Evaluate the average per‑token entropy of `sentence`.
+    /// Evaluate the average per-token entropy of `sentence` without touching the chat context.
     ///
-    /// Tokenizes the input, evaluates all tokens in one batch, and computes the
-    /// entropy for each token position using the logits. Returns the arithmetic
-    /// mean across tokens.
-    ///
-    /// # Errors
-    /// Returns `EngineError` if tokenization, batch building, or decoding fails.
+    /// The sentence is decoded in a context created for this call. That keeps the measurement from
+    /// advancing the chat context's decode position, which a range clear of the KV cache does not
+    /// rewind.
     pub(crate) fn evaluate_entropy(
         sentence: &str,
         model: &LlamaModel,
-        context: &mut LlamaContext,
-        batch: &mut LlamaBatch,
-        session: &mut InferenceSession,
+        backend: &LlamaBackend,
+        n_batch: u32,
     ) -> Result<f32> {
-        let tokens = model
-            .str_to_token(sentence, AddBos::Always)
-            .map_err(|e| AmbiError::EngineError(format!("Tokenize failed: {}", e)))?
-            .to_vec();
+        let tokens = model.vocab().tokenize(sentence.as_bytes(), true, true);
 
         if tokens.is_empty() {
             return Ok(0.0);
         }
 
-        let snapshot = session.snapshot();
-        let start_pos = session.pos;
+        // Keep a sane floor: a context sized to a handful of tokens is not worth creating, and
+        // some backends reject very small contexts outright.
+        let n_ctx = u32::try_from(tokens.len())
+            .map_err(|_| {
+                AmbiError::engine_kind(
+                    crate::error::EngineErrorKind::InvalidRequest,
+                    "Entropy input exceeds context limits".to_string(),
+                )
+            })?
+            .max(64);
+        let mut params = LlamaContextParams::default().with_n_ctx(Some(
+            std::num::NonZeroU32::new(n_ctx).expect("n_ctx is floored above zero"),
+        ));
+        params = params.with_n_batch(n_batch.max(1));
 
-        batch.clear();
-        for (i, &t) in tokens.iter().enumerate() {
+        let mut context = model
+            .new_context(backend, params)
+            .map_err(|e| AmbiError::engine(format!("Failed to create entropy context: {}", e)))?;
+        let mut batch = LlamaBatch::new(tokens.len().max(1), 1);
+        for (i, &token) in tokens.iter().enumerate() {
             batch
-                .add(t, session.pos + i as i32, &[0], true)
-                .map_err(|e| AmbiError::EngineError(format!("Batch add failed: {}", e)))?;
+                .add(token, i as i32, &[0], true)
+                .map_err(|e| AmbiError::engine(format!("Batch add failed: {}", e)))?;
         }
-
         context
-            .decode(batch)
-            .map_err(|e| AmbiError::EngineError(format!("Decoding failed: {}", e)))?;
+            .decode(&mut batch)
+            .map_err(|e| AmbiError::engine(format!("Decoding failed: {}", e)))?;
 
-        let mut total_entropy = 0.0_f32;
-        for i in 0..tokens.len() {
-            let logits = context.get_logits_ith(i as i32);
-            total_entropy += Self::token_entropy(logits);
-        }
-
-        session.restore(snapshot);
-
-        let end_pos = start_pos + tokens.len() as i32;
-        if let Err(e) =
-            context.clear_kv_cache_seq(Some(0), Some(start_pos as u32), Some(end_pos as u32))
-        {
-            log::warn!("Failed to clear KV cache after entropy evaluation: {}", e);
-        }
-
+        let total_entropy: f32 = (0..tokens.len())
+            .map(|i| Self::token_entropy(context.get_logits_ith(i as i32)))
+            .sum();
         Ok(total_entropy / tokens.len() as f32)
     }
 

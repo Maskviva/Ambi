@@ -13,7 +13,7 @@ categories = ["artificial-intelligence", "algorithms"]
 path = "src/lib.rs"
 
 [dependencies]
-ambi = { version = "0.3", path = "../", default-features = false }
+ambi = { version = "0.4", path = "../", default-features = false }
 ambi-memory = { version = "0.1", path = "../ambi-memory" }
 async-trait = "0.1.89"
 tokio = "1.52.2"

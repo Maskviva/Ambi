@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-07
+
+### 基础设施与重构
+
+- **llama-cpp-2 v0.1.161 升级** — 完成对 `llama_cpp` 提供程序的新 API 适配：
+  - 更新分词器和解码逻辑以使用 `model.vocab()`。
+  - 修复采样器初始化，正确传入 `n_vocab`。
+  - 集成 `MtmdBitmap` 的 API 更新。
+  - 解决构建环境相关问题。
+- **项目结构** — 进行少量清理以提高代码可维护性并移除无效代码。
+- **Python 绑定修复** — 解决 `pyo3` 宏中的非局部 `impl` 定义警告。
+
 ## [0.3.8] — 2026-05-13
 
 ### 新功能

@@ -27,10 +27,10 @@ impl VisionContext {
     ) -> Result<Option<Self>> {
         if let Some(path) = mmproj_path {
             if !Path::new(path).exists() {
-                return Err(AmbiError::EngineError(format!(
-                    "Vision model not found: {}",
-                    path
-                )));
+                return Err(AmbiError::engine_kind(
+                    crate::error::EngineErrorKind::ModelLoad,
+                    format!("Vision model not found: {}", path),
+                ));
             }
             info!("Loading External Vision Projector (mmproj) from: {}", path);
 
@@ -43,14 +43,18 @@ impl VisionContext {
 
                 let mtmd_ctx =
                     MtmdContext::init_from_file(path, model, &mtmd_params).map_err(|e| {
-                        AmbiError::EngineError(format!("Failed to init MTMD context: {}", e))
+                        AmbiError::engine_kind(
+                            crate::error::EngineErrorKind::ModelLoad,
+                            format!("Failed to init MTMD context: {}", e),
+                        )
                     })?;
                 Ok(Some(Self::ExternalProjector { mtmd_ctx }))
             }
             #[cfg(not(feature = "mtmd"))]
             {
-                Err(AmbiError::EngineError(
-                    "External projector support requires the 'mtmd' feature.".into(),
+                Err(AmbiError::engine_kind(
+                    crate::error::EngineErrorKind::InvalidRequest,
+                    "External projector support requires the 'mtmd' feature.".to_string(),
                 ))
             }
         } else if integrated {
@@ -62,21 +66,29 @@ impl VisionContext {
     }
 
     #[cfg(feature = "mtmd")]
+    #[allow(dead_code)]
     pub fn create_bitmaps(&self, images: &[String]) -> Result<Vec<MtmdBitmap>> {
         match self {
-            Self::ExternalProjector { mtmd_ctx } => images
-                .iter()
-                .map(|b64| {
-                    let raw = Self::decode_base64_image(b64)?;
-                    MtmdBitmap::from_buffer(mtmd_ctx, &raw).map_err(|e| {
-                        AmbiError::EngineError(format!("Bitmap creation failed: {}", e))
-                    })
-                })
-                .collect(),
-            _ => Err(AmbiError::EngineError(
-                "create_bitmaps called on non-ExternalProjector context".into(),
+            Self::ExternalProjector { mtmd_ctx } => Self::create_bitmaps_with_ctx(mtmd_ctx, images),
+            _ => Err(AmbiError::engine(
+                "create_bitmaps called on non-ExternalProjector context".to_string(),
             )),
         }
+    }
+
+    #[cfg(feature = "mtmd")]
+    pub fn create_bitmaps_with_ctx(
+        mtmd_ctx: &MtmdContext,
+        images: &[String],
+    ) -> Result<Vec<MtmdBitmap>> {
+        images
+            .iter()
+            .map(|b64| {
+                let raw = Self::decode_base64_image(b64)?;
+                MtmdBitmap::from_buffer(mtmd_ctx, &raw, false)
+                    .map_err(|e| AmbiError::engine(format!("Bitmap creation failed: {}", e)))
+            })
+            .collect()
     }
 
     #[cfg(feature = "mtmd")]
@@ -86,8 +98,11 @@ impl VisionContext {
         } else {
             base64_img
         };
-        general_purpose::STANDARD
-            .decode(clean_b64)
-            .map_err(|e| AmbiError::EngineError(format!("Failed to decode base64 image: {}", e)))
+        general_purpose::STANDARD.decode(clean_b64).map_err(|e| {
+            AmbiError::engine_kind(
+                crate::error::EngineErrorKind::InvalidRequest,
+                format!("Failed to decode base64 image: {}", e),
+            )
+        })
     }
 }

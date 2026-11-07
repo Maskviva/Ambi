@@ -53,6 +53,7 @@ impl Agent {
         );
 
         LLMRequest {
+            session_id: state.session_id.clone(),
             system_prompt: final_system_prompt,
             history: filtered_history,
             tools: tools.to_vec(),

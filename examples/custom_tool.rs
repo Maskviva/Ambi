@@ -77,6 +77,7 @@ async fn main() -> ambi::error::Result<()> {
         model_name: "gpt-4o-mini".to_string(),
         temp: 0.1,
         top_p: 0.9,
+        supports_vision: false, // Disable visual multimodal capabilities
     };
 
     // 4. Register the tool into the Agent

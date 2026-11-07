@@ -21,8 +21,9 @@ async fn main() -> Result<()> {
         api_key,
         base_url: "https://api.openai.com/v1".to_string(), // The base URL of the API endpoint.
         model_name: "gpt-4o-mini".to_string(),             // The specific model to use.
-        temp: 0.7,  // Controls randomness (higher is more creative).
-        top_p: 0.9, // Controls diversity via nucleus sampling.
+        temp: 0.7,              // Controls randomness (higher is more creative).
+        top_p: 0.9,             // Controls diversity via nucleus sampling.
+        supports_vision: false, // Disable visual multimodal capabilities
     });
 
     // Step 4: Instantiate the ChatRunner. This is used to distinguish which `ChatRunner` it comes from.

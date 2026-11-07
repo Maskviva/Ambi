@@ -71,7 +71,7 @@ impl StandardRagPipeline {
             .map_err(|e| AmbiError::PipelineError(format!("RAG Retrieval failed: {}", e)))?;
 
         let packed_context =
-            ContextPacker::pack(&agent.get_llama_engine(), docs, self.max_context_tokens)?;
+            ContextPacker::pack(&agent.llm_engine(), docs, self.max_context_tokens)?;
 
         let mut lock = state.write().await;
         if !packed_context.is_empty() {

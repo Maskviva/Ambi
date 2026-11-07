@@ -6,7 +6,6 @@
 /**/Cargo.lock
 /run_ide.bat
 /example/chat_local/config.toml
-/copy_rs.bat
 /**/copy_rs.bat
 /docs/node_modules
 /docs/pnpm-lock.yaml
@@ -18,7 +17,3 @@
 /bindings/node/index.d.ts
 /bindings/node/index.js
 /bindings/node/npm
-
-
-
-

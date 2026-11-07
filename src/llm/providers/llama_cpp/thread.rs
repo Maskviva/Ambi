@@ -6,10 +6,11 @@ use super::inference::InferenceInput;
 use super::session::InferenceSession;
 use super::vision::VisionContext;
 use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
-use llama_cpp_2::model::{AddBos, LlamaModel};
+use llama_cpp_2::model::LlamaModel;
 use log::{error, info};
 use std::num::NonZeroU32;
 use std::panic::{self, AssertUnwindSafe};
@@ -17,16 +18,18 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc;
+
+/// How many commands may be queued before submitters have to wait.
+///
+/// The worker serves one request at a time, so a larger queue only converts "backpressure" into
+/// latency and memory. Small and explicit is the point.
+const COMMAND_QUEUE_CAPACITY: usize = 16;
 
 pub(crate) fn spawn_engine_thread(
     cfg: LlamaEngineConfig,
-) -> crate::error::Result<(
-    UnboundedSender<LlamaCommand>,
-    JoinHandle<()>,
-    Arc<AtomicBool>,
-)> {
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<LlamaCommand>();
+) -> crate::error::Result<(mpsc::Sender<LlamaCommand>, JoinHandle<()>, Arc<AtomicBool>)> {
+    let (cmd_tx, cmd_rx) = mpsc::channel::<LlamaCommand>(COMMAND_QUEUE_CAPACITY);
     let alive = Arc::new(AtomicBool::new(true));
     let alive_clone = alive.clone();
 
@@ -52,7 +55,25 @@ pub(crate) fn spawn_engine_thread(
     Ok((cmd_tx, handle, alive))
 }
 
-fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaCommand>) {
+/// Ensures the cached sequence belongs to `requested` before inference starts.
+///
+/// A single context holds a single sequence, so a request from a different conversation cannot
+/// reuse whatever tokens happen to be cached: identical prefixes across unrelated conversations
+/// are not the same decoder state. Switching owners starts from a clean slate.
+fn adopt_session(
+    session: &mut InferenceSession,
+    context: &mut LlamaContext<'_>,
+    cache_session: &mut Option<String>,
+    requested: &str,
+) {
+    if cache_session.as_deref() != Some(requested) {
+        session.reset();
+        context.clear_kv_cache();
+        *cache_session = Some(requested.to_owned());
+    }
+}
+
+fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: mpsc::Receiver<LlamaCommand>) {
     let backend = match LlamaBackend::init() {
         Ok(b) => b,
         Err(e) => {
@@ -97,7 +118,7 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
     };
 
     // Core Initialization: Delegate vision strategy resolution to VisionContext
-    let vision_ctx = VisionContext::init(
+    let mut vision_ctx = VisionContext::init(
         cfg.mmproj_path.as_ref(),
         cfg.integrated_vision,
         #[cfg(feature = "mtmd")]
@@ -113,6 +134,10 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
 
     let mut batch = LlamaBatch::new(cfg.n_tokens, cfg.n_seq_max);
     let mut session = InferenceSession::new();
+    // Which conversation the cache currently belongs to. One context can only hold one
+    // sequence, so switching sessions has to start from a clean slate rather than guess
+    // whether a shared token prefix means the same conversation.
+    let mut cache_session: Option<String> = None;
 
     info!("Llama engine thread started successfully.");
 
@@ -121,15 +146,19 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
             LlamaCommand::Chat {
                 prompt,
                 images,
+                session_id,
+                cancel,
                 reply_tx,
             } => {
                 let mut full_response = String::new();
+                adopt_session(&mut session, &mut context, &mut cache_session, &session_id);
 
                 let input = InferenceInput {
                     prompt: &prompt,
                     images: &images,
-                    vision_ctx: vision_ctx.as_ref(),
+                    vision_ctx: vision_ctx.as_mut(),
                     cfg: &cfg,
+                    cancel: cancel.as_ref(),
                 };
 
                 let res = InferenceSession::run_inference(
@@ -148,14 +177,19 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
             LlamaCommand::ChatStream {
                 prompt,
                 images,
+                session_id,
+                cancel,
                 chunk_tx,
                 done_tx,
             } => {
+                adopt_session(&mut session, &mut context, &mut cache_session, &session_id);
+
                 let input = InferenceInput {
                     prompt: &prompt,
                     images: &images,
-                    vision_ctx: vision_ctx.as_ref(),
+                    vision_ctx: vision_ctx.as_mut(),
                     cfg: &cfg,
+                    cancel: cancel.as_ref(),
                 };
 
                 let res = InferenceSession::run_inference(
@@ -175,23 +209,20 @@ fn engine_main(cfg: LlamaEngineConfig, mut cmd_rx: UnboundedReceiver<LlamaComman
                 session.reset();
                 context.clear_kv_cache();
                 batch.clear();
+                cache_session = None;
             }
             LlamaCommand::EvaluateEntropy { sentence, reply_tx } => {
                 let res = InferenceSession::evaluate_entropy(
                     &sentence,
                     &model,
-                    &mut context,
-                    &mut batch,
-                    &mut session,
+                    &backend,
+                    cfg.n_tokens as u32,
                 );
                 let _ = reply_tx.send(res);
             }
             LlamaCommand::CountTokens { text, reply_tx } => {
-                let res = model
-                    .str_to_token(&text, AddBos::Always)
-                    .map(|tokens| tokens.len())
-                    .map_err(|e| crate::error::AmbiError::EngineError(e.to_string()));
-                let _ = reply_tx.send(res);
+                let count = model.vocab().tokenize(text.as_bytes(), true, true).len();
+                let _ = reply_tx.send(Ok(count));
             }
             LlamaCommand::Shutdown => {
                 info!("Engine thread received shutdown command. Exiting gracefully.");

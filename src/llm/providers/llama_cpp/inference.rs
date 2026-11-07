@@ -6,10 +6,11 @@ use super::vision::VisionContext;
 use crate::error::{AmbiError, Result};
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_batch::LlamaBatch;
-use llama_cpp_2::model::{AddBos, LlamaModel};
+use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
 use log::{debug, info, warn};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(feature = "mtmd")]
 use llama_cpp_2::mtmd::MtmdInputText;
@@ -17,8 +18,11 @@ use llama_cpp_2::mtmd::MtmdInputText;
 pub(crate) struct InferenceInput<'a> {
     pub prompt: &'a str,
     pub images: &'a [String],
-    pub vision_ctx: Option<&'a VisionContext>,
+    pub vision_ctx: Option<&'a mut VisionContext>,
     pub cfg: &'a LlamaEngineConfig,
+    /// Set by the awaiting side when the request is abandoned. Polled between decode steps so an
+    /// abandoned generation stops instead of decoding to `max_tokens`.
+    pub cancel: &'a AtomicBool,
 }
 
 impl InferenceSession {
@@ -63,7 +67,7 @@ impl InferenceSession {
         };
 
         // Process image presence (validation / error for unsupported configurations)
-        Self::process_images(input.images, input.vision_ctx)?;
+        Self::process_images(input.images, input.vision_ctx.as_deref())?;
 
         // Multimodal: if we have images AND a valid ExternalProjector (mtmd feature),
         // delegate to dedicated multimodal inference path.
@@ -92,9 +96,10 @@ impl InferenceSession {
             &current_tokens,
             match_len,
             &snapshot,
+            input.cancel,
         )?;
 
-        let mut sampler = Self::create_sampler(input.cfg);
+        let mut sampler = Self::create_sampler(input.cfg, model);
 
         Self::generation_loop(
             session,
@@ -105,24 +110,26 @@ impl InferenceSession {
             &mut sampler,
             dynamic_max_tokens,
             &snapshot,
+            input.cancel,
             &mut callback,
         )
     }
 
     fn tokenize_prompt(model: &LlamaModel, prompt: &str) -> Result<Vec<LlamaToken>> {
-        let tokens = model
-            .str_to_token(prompt, AddBos::Always)
-            .map_err(|e| AmbiError::EngineError(format!("Tokenize failed: {}", e)))?;
-        Ok(tokens.to_vec())
+        let tokens = model.vocab().tokenize(prompt.as_bytes(), true, true);
+        Ok(tokens)
     }
 
     fn validate_prompt_length(tokens: &[LlamaToken], cfg: &LlamaEngineConfig) -> Result<()> {
         if tokens.len() >= cfg.n_ctx as usize {
-            return Err(AmbiError::EngineError(format!(
-                "Prompt size ({} tokens) exceeds or equals n_ctx limit ({})",
-                tokens.len(),
-                cfg.n_ctx
-            )));
+            return Err(AmbiError::engine_kind(
+                crate::error::EngineErrorKind::InvalidRequest,
+                format!(
+                    "Prompt size ({} tokens) exceeds or equals n_ctx limit ({})",
+                    tokens.len(),
+                    cfg.n_ctx
+                ),
+            ));
         }
         Ok(())
     }
@@ -133,11 +140,14 @@ impl InferenceSession {
             (cfg.n_ctx as usize).saturating_sub(tokens.len()),
         );
         if dynamic_max < 32 {
-            return Err(AmbiError::EngineError(format!(
-                "Insufficient token space left for generation (only {} tokens). \
+            return Err(AmbiError::engine_kind(
+                crate::error::EngineErrorKind::InvalidRequest,
+                format!(
+                    "Insufficient token space left for generation (only {} tokens). \
                  Increase n_ctx or reduce prompt length.",
-                dynamic_max
-            )));
+                    dynamic_max
+                ),
+            ));
         }
         Ok(dynamic_max)
     }
@@ -166,12 +176,16 @@ impl InferenceSession {
             let p0 = match_len as u32;
             let p1 = (match_len + evicted_len) as u32;
 
-            if let Err(e) = context.clear_kv_cache_seq(Some(0), Some(p0), Some(p1)) {
-                warn!(
-                    "Failed to cleanly remove KV‑cache sequence: {}. Falling back to full reset.",
-                    e
-                );
+            // `false` means a partial sequence removal failed, which is not a success.
+            let removed = context
+                .clear_kv_cache_seq(Some(0), Some(p0), Some(p1))
+                .unwrap_or(false);
+            if !removed {
+                warn!("Failed to cleanly remove KV‑cache sequence. Falling back to full reset.");
                 context.clear_kv_cache();
+                // The cache is gone, so the recorded position and history can no longer be used as
+                // the starting point for the new tokens.
+                session.reset();
                 match_len = 0;
             } else if let Err(e) =
                 context.kv_cache_seq_add(0, Some(p1), None, -(evicted_len as i32))
@@ -181,6 +195,7 @@ impl InferenceSession {
                     e
                 );
                 context.clear_kv_cache();
+                session.reset();
                 match_len = 0;
             } else {
                 session.history_tokens.truncate(match_len);
@@ -197,10 +212,11 @@ impl InferenceSession {
             return Ok(());
         }
         match vision_ctx {
-            None => Err(AmbiError::EngineError(
+            None => Err(AmbiError::engine_kind(
+                crate::error::EngineErrorKind::InvalidRequest,
                 "Multimodal input received, but no vision context is configured. \
                  Set `mmproj_path` or `integrated_vision` in LlamaEngineConfig."
-                    .into(),
+                    .to_string(),
             )),
             #[cfg(feature = "mtmd")]
             Some(VisionContext::ExternalProjector { .. }) => {
@@ -208,14 +224,16 @@ impl InferenceSession {
                 // in the caller (run_inference). Here we just allow it.
                 Ok(())
             }
-            Some(VisionContext::Integrated) => Err(AmbiError::EngineError(
+            Some(VisionContext::Integrated) => Err(AmbiError::engine_kind(
+                crate::error::EngineErrorKind::InvalidRequest,
                 "Native integrated vision support is not yet implemented. \
      To use multimodal models, enable the 'mtmd' feature and provide an 'mmproj_path'."
-                    .into(),
+                    .to_string(),
             )),
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn eval_new_tokens(
         session: &mut InferenceSession,
         context: &mut LlamaContext,
@@ -224,6 +242,7 @@ impl InferenceSession {
         current_tokens: &[LlamaToken],
         match_len: usize,
         snapshot: &(Vec<LlamaToken>, Vec<u8>, i32),
+        cancel: &AtomicBool,
     ) -> Result<()> {
         let new_tokens = &current_tokens[match_len..];
         let chunk_size = cfg.n_tokens;
@@ -231,20 +250,25 @@ impl InferenceSession {
         let mut processed = 0;
 
         for chunk in new_tokens.chunks(chunk_size) {
+            if cancel.load(Ordering::Relaxed) {
+                debug!("Prompt evaluation abandoned before completion.");
+                Self::rollback(session, context, snapshot);
+                return Ok(());
+            }
             batch.clear();
             for &t in chunk.iter() {
                 processed += 1;
                 let is_last = processed == total_new;
                 batch.add(t, session.pos, &[0], is_last).map_err(|e| {
                     Self::rollback(session, context, snapshot);
-                    AmbiError::EngineError(format!("Batch add failed: {}", e))
+                    AmbiError::engine(format!("Batch add failed: {}", e))
                 })?;
                 session.pos += 1;
             }
             if !chunk.is_empty() {
                 context.decode(batch).map_err(|e| {
                     Self::rollback(session, context, snapshot);
-                    AmbiError::EngineError(format!("Decoding failed: {}", e))
+                    AmbiError::engine(format!("Decoding failed: {}", e))
                 })?;
             }
         }
@@ -252,9 +276,17 @@ impl InferenceSession {
         Ok(())
     }
 
-    fn create_sampler(cfg: &LlamaEngineConfig) -> LlamaSampler {
+    fn create_sampler(cfg: &LlamaEngineConfig, model: &LlamaModel) -> LlamaSampler {
+        // `temp <= 0` is the documented deterministic setting. `dist` has no defined token at
+        // that temperature, so the chain must end in `greedy` exactly when sampling is disabled.
+        let selector = if cfg.temp <= 0.0 {
+            LlamaSampler::greedy()
+        } else {
+            LlamaSampler::dist(cfg.seed)
+        };
         LlamaSampler::chain_simple([
             LlamaSampler::penalties(
+                model.n_vocab(),
                 cfg.penalty_last_n,
                 cfg.penalty_repeat,
                 cfg.penalty_freq,
@@ -262,7 +294,7 @@ impl InferenceSession {
             ),
             LlamaSampler::top_p(cfg.top_p, cfg.min_keep),
             LlamaSampler::temp(cfg.temp),
-            LlamaSampler::dist(cfg.seed),
+            selector,
         ])
     }
 
@@ -272,10 +304,11 @@ impl InferenceSession {
         model: &LlamaModel,
         context: &mut LlamaContext,
         batch: &mut LlamaBatch,
-        cfg: &LlamaEngineConfig,
+        _cfg: &LlamaEngineConfig,
         sampler: &mut LlamaSampler,
         dynamic_max_tokens: usize,
         snapshot: &(Vec<LlamaToken>, Vec<u8>, i32),
+        cancel: &AtomicBool,
         callback: &mut F,
     ) -> Result<()>
     where
@@ -285,16 +318,23 @@ impl InferenceSession {
         let mut logits_idx = -1;
 
         loop {
+            if cancel.load(Ordering::Relaxed) {
+                debug!("Generation abandoned after {} tokens.", decoded_count);
+                Self::rollback(session, context, snapshot);
+                return Ok(());
+            }
+
             let next_token = sampler.sample(context, logits_idx);
             sampler.accept(next_token);
 
-            if model.is_eog_token(next_token) || decoded_count >= dynamic_max_tokens {
+            if model.vocab().is_eog(next_token) || decoded_count >= dynamic_max_tokens {
                 break;
             }
 
             session.history_tokens.push(next_token);
 
-            if let Ok(bytes) = model.token_to_piece_bytes(next_token, cfg.buffer_size, true, None) {
+            let bytes = model.vocab().token_to_piece(next_token, true, None);
+            if !bytes.is_empty() {
                 session.utf8_buffer.extend_from_slice(&bytes);
 
                 let should_stop = match std::str::from_utf8(&session.utf8_buffer) {
@@ -338,11 +378,11 @@ impl InferenceSession {
                 .add(next_token, session.pos, &[0], true)
                 .map_err(|e| {
                     Self::rollback(session, context, snapshot);
-                    AmbiError::EngineError(format!("Batch add failed: {}", e))
+                    AmbiError::engine(format!("Batch add failed: {}", e))
                 })?;
             context.decode(batch).map_err(|e| {
                 Self::rollback(session, context, snapshot);
-                AmbiError::EngineError(format!("Decoding failed: {}", e))
+                AmbiError::engine(format!("Decoding failed: {}", e))
             })?;
 
             logits_idx = 0;
@@ -361,7 +401,31 @@ impl InferenceSession {
         snapshot: &(Vec<LlamaToken>, Vec<u8>, i32),
     ) {
         session.restore(snapshot.clone());
-        context.clear_kv_cache();
+
+        // The prefix is only reusable if the cache still reaches the snapshot boundary. It may not:
+        // `handle_kv_cache` falls back to a full clear when a sequence edit fails, and that wipe
+        // happens after the snapshot was taken.
+        let prefix_intact = snapshot.2 <= 0 || context.kv_cache_seq_pos_max(0) + 1 >= snapshot.2;
+        if !prefix_intact {
+            warn!("KV cache no longer covers the request snapshot; discarding the sequence.");
+            context.clear_kv_cache();
+            session.reset();
+            return;
+        }
+
+        // Discard only what this request decoded. A full clear would also drop the prefix that the
+        // next turn is expected to reuse.
+        let removed = context
+            .clear_kv_cache_seq(Some(0), Some(snapshot.2.max(0) as u32), None)
+            .unwrap_or(false);
+        if !removed {
+            warn!(
+                "Failed to roll back KV cache from position {}; resetting the whole sequence.",
+                snapshot.2
+            );
+            context.clear_kv_cache();
+            session.reset();
+        }
     }
 
     #[cfg(feature = "mtmd")]
@@ -385,16 +449,18 @@ impl InferenceSession {
         session.reset();
         context.clear_kv_cache();
 
-        let mtmd_ctx = match input.vision_ctx {
-            Some(VisionContext::ExternalProjector { mtmd_ctx }) => mtmd_ctx,
+        let (mtmd_ctx, bitmaps) = match input.vision_ctx {
+            Some(VisionContext::ExternalProjector { mtmd_ctx }) => {
+                let bitmaps = VisionContext::create_bitmaps_with_ctx(mtmd_ctx, input.images)?;
+                (mtmd_ctx, bitmaps)
+            }
             _ => {
-                return Err(AmbiError::EngineError(
-                    "Missing MTMD context for multimodal inference".into(),
+                return Err(AmbiError::engine(
+                    "Missing MTMD context for multimodal inference".to_string(),
                 ))
             }
         };
 
-        let bitmaps = input.vision_ctx.unwrap().create_bitmaps(input.images)?;
         let bitmap_refs: Vec<_> = bitmaps.iter().collect();
 
         let text_input = MtmdInputText {
@@ -403,9 +469,12 @@ impl InferenceSession {
             parse_special: true,
         };
 
-        let chunks = mtmd_ctx
-            .tokenize(text_input, &bitmap_refs)
-            .map_err(|e| AmbiError::EngineError(format!("MTMD tokenize error: {}", e)))?;
+        let chunks = mtmd_ctx.tokenize(text_input, &bitmap_refs).map_err(|e| {
+            AmbiError::engine_kind(
+                crate::error::EngineErrorKind::Tokenize,
+                format!("MTMD tokenize error: {}", e),
+            )
+        })?;
 
         // Collect all text tokens to populate session.history_tokens
         let mut all_tokens = Vec::new();
@@ -430,14 +499,14 @@ impl InferenceSession {
                 input.cfg.n_tokens as i32, // n_batch
                 true,                      // logits_last
             )
-            .map_err(|e| AmbiError::EngineError(format!("MTMD eval error: {}", e)))?;
+            .map_err(|e| AmbiError::engine(format!("MTMD eval error: {}", e)))?;
 
         // Update session state to reflect all processed tokens
         session.history_tokens = all_tokens;
         session.pos = new_n_past;
 
         // Now continue with normal generation
-        let mut sampler = Self::create_sampler(input.cfg);
+        let mut sampler = Self::create_sampler(input.cfg, model);
         let dynamic_max_tokens = Self::calculate_max_tokens(&session.history_tokens, input.cfg)?;
 
         Self::generation_loop(
@@ -449,6 +518,7 @@ impl InferenceSession {
             &mut sampler,
             dynamic_max_tokens,
             &snapshot,
+            input.cancel,
             callback,
         )
     }

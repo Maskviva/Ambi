@@ -55,7 +55,7 @@ mod tests {
         println!();
 
         let entropy = agent
-            .get_llama_engine()
+            .llm_engine()
             .backend_downcast_ref::<LlamaEngine>()
             .unwrap()
             .evaluate_sentence_entropy(&*res_buffe)

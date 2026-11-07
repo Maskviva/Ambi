@@ -6,8 +6,20 @@ use super::{Message, ToolDefinition};
 use std::sync::Arc;
 
 /// The standard payload compiled by the Agent and sent to the LLM engine.
+///
+/// # Session identity
+///
+/// `LLMRequest` is per-request, but a single engine handle is typically shared by many
+/// conversation states (and, in `ChatRunner`, by concurrent tool calls). `session_id` is the
+/// identity of the [`crate::AgentState`] that produced this request, so a stateful backend can
+/// keep one cache slot per conversation instead of assuming a global one.
+///
+/// Stateless backends (the OpenAI-compatible engine) may ignore it. Backends that keep decoder
+/// state must treat a change of `session_id` as "the cache belongs to someone else".
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct LLMRequest {
+    /// Identity of the originating conversation, used to scope stateful backend caches.
+    pub session_id: String,
     /// The aggregated system preamble.
     pub system_prompt: String,
     /// The filtered list of conversational history.

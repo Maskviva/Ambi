@@ -11,15 +11,26 @@ use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use tokio::sync::mpsc::{Sender, UnboundedSender};
+use tokio::sync::mpsc::Sender;
 
 /// The public handle to the llama.cpp inference engine.
 ///
-/// All operations are non‑blocking on the async runtime.  A background thread
-/// owns the heavy model resources and serialises inference requests.
+/// All operations are non‑blocking on the async runtime. A background thread owns the heavy model
+/// resources and serialises inference requests.
+///
+/// # Concurrency
+///
+/// The worker serves one request at a time. The command queue is bounded, so submitting beyond
+/// that depth applies backpressure to the caller instead of growing memory without limit.
+///
+/// # Session state
+///
+/// Each request carries the identity of the conversation it belongs to. Because a context holds a
+/// single sequence, switching conversations begins from a clean cache; alternating conversations
+/// on one engine therefore pays a re-prefill cost rather than silently sharing decoder state.
 pub struct LlamaEngine {
     /// Sends commands to the background thread.
-    pub(crate) cmd_tx: UnboundedSender<LlamaCommand>,
+    pub(crate) cmd_tx: Sender<LlamaCommand>,
     /// Join handle for the background thread (used during graceful shutdown).
     _handle: Option<JoinHandle<()>>,
 
@@ -64,6 +75,9 @@ impl LlamaEngine {
     }
 
     /// Evaluates the entropy of a sentence.
+    ///
+    /// The sentence is decoded in a throwaway context, so this measurement never disturbs the
+    /// chat sequence.
     pub async fn evaluate_sentence_entropy(&self, sentence: &str) -> Result<f32> {
         self.evaluate_sentence_entropy_internal(sentence).await
     }
@@ -71,8 +85,8 @@ impl LlamaEngine {
 
 impl Drop for LlamaEngine {
     fn drop(&mut self) {
-        // Attempt polite shutdown – ignore errors as the thread may already be dead.
-        let _ = self.cmd_tx.send(LlamaCommand::Shutdown);
+        // Polite shutdown; never block in `Drop`, so a full queue simply skips the courtesy call.
+        self.shutdown_internal();
 
         self._handle.take();
     }
@@ -83,13 +97,22 @@ impl LLMEngineTrait for LlamaEngine {
     impl_as_any!();
 
     async fn chat(&self, request: LLMRequest) -> Result<String> {
-        self.chat_internal(&request.formatted_prompt, request.images)
-            .await
+        self.chat_internal(
+            &request.formatted_prompt,
+            request.images,
+            &request.session_id,
+        )
+        .await
     }
 
     async fn chat_stream(&self, request: LLMRequest, tx: Sender<Result<String>>) {
-        self.stream_internal(&request.formatted_prompt, request.images, tx)
-            .await;
+        self.stream_internal(
+            &request.formatted_prompt,
+            request.images,
+            &request.session_id,
+            tx,
+        )
+        .await;
     }
 
     fn reset_context(&self) {

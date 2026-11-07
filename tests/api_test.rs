@@ -16,6 +16,7 @@ mod tests {
             model_name,
             temp: 0.7,
             top_p: 0.9,
+            supports_vision: false,
         };
 
         let chat_runner = ChatRunner::default();

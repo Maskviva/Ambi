@@ -69,9 +69,7 @@ impl Agent {
     pub async fn make(engine_cfg: LLMEngineConfig) -> Result<Self> {
         let engine = spawn_blocking(move || LLMEngine::load(engine_cfg))
             .await
-            .map_err(|e| {
-                AmbiError::EngineError(format!("Failed to spawn blocking task: {}", e))
-            })??;
+            .map_err(|e| AmbiError::engine(format!("Failed to spawn blocking task: {}", e)))??;
 
         Ok(Self::init_agent(engine))
     }

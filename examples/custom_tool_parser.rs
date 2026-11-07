@@ -71,6 +71,7 @@ async fn main() -> Result<()> {
         model_name: "gpt-4o-mini".to_string(),
         temp: 0.7,
         top_p: 0.9,
+        supports_vision: false, // Disable visual multimodal capabilities
     });
 
     // Step 4: Instantiate the Agent and inject the custom tool parser using `.with_tool_parser()`.

@@ -10,12 +10,13 @@ use crate::error::{AmbiError, Result};
 use crate::types::{LLMRequest, Message};
 use crate::ContentPart;
 use async_openai::types::chat::{
-    ChatCompletionMessageToolCalls, ChatCompletionRequestAssistantMessageArgs,
-    ChatCompletionRequestMessage, ChatCompletionRequestMessageContentPartImageArgs,
+    ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
+    ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
+    ChatCompletionRequestMessageContentPartImageArgs,
     ChatCompletionRequestMessageContentPartTextArgs, ChatCompletionRequestSystemMessageArgs,
     ChatCompletionRequestToolMessageArgs, ChatCompletionRequestUserMessageArgs, ChatCompletionTool,
     ChatCompletionTools, CreateChatCompletionRequest, CreateChatCompletionRequestArgs,
-    FunctionObjectArgs, ImageUrlArgs,
+    FunctionCall, FunctionObjectArgs, ImageUrlArgs,
 };
 
 impl OpenAIEngine {
@@ -32,7 +33,7 @@ impl OpenAIEngine {
                 ChatCompletionRequestSystemMessageArgs::default()
                     .content(request.system_prompt.clone())
                     .build()
-                    .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                    .map_err(|e| AmbiError::engine(e.to_string()))?
                     .into(),
             );
         }
@@ -48,7 +49,7 @@ impl OpenAIEngine {
                                     ChatCompletionRequestMessageContentPartTextArgs::default()
                                         .text(text.clone())
                                         .build()
-                                        .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                                        .map_err(|e| AmbiError::engine(e.to_string()))?
                                         .into(),
                                 );
                             }
@@ -64,12 +65,13 @@ impl OpenAIEngine {
                                 parts.push(
                                     ChatCompletionRequestMessageContentPartImageArgs::default()
                                         .image_url(
-                                            ImageUrlArgs::default().url(safe_url).build().map_err(
-                                                |e| AmbiError::EngineError(e.to_string()),
-                                            )?,
+                                            ImageUrlArgs::default()
+                                                .url(safe_url)
+                                                .build()
+                                                .map_err(|e| AmbiError::engine(e.to_string()))?,
                                         )
                                         .build()
-                                        .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                                        .map_err(|e| AmbiError::engine(e.to_string()))?
                                         .into(),
                                 );
                             }
@@ -79,7 +81,7 @@ impl OpenAIEngine {
                     ChatCompletionRequestUserMessageArgs::default()
                         .content(parts)
                         .build()
-                        .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                        .map_err(|e| AmbiError::engine(e.to_string()))?
                         .into()
                 }
                 Message::Assistant {
@@ -91,24 +93,28 @@ impl OpenAIEngine {
                         args.content(content.clone());
                     }
                     if !tool_calls.is_empty() {
+                        // OpenAI requires `function.arguments` to be a JSON *string*, while Ambi
+                        // stores the arguments as an already-parsed `Value`. Serialize exactly
+                        // once here so the value round-trips instead of being double-encoded.
+                        // Built as a typed value rather than re-parsed from JSON, so a malformed
+                        // argument can never panic on the request path.
                         let api_tool_calls: Vec<ChatCompletionMessageToolCalls> = tool_calls
                             .iter()
                             .map(|(name, arg, id)| {
-                                serde_json::from_value(serde_json::json!({
-                                    "id": id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": name,
-                                        "arguments": arg.to_string()
-                                    }
-                                }))
-                                .expect("Failed to deserialize tool call safely")
+                                ChatCompletionMessageToolCall {
+                                    id: id.clone(),
+                                    function: FunctionCall {
+                                        name: name.clone(),
+                                        arguments: arg.to_string(),
+                                    },
+                                }
+                                .into()
                             })
                             .collect();
                         args.tool_calls(api_tool_calls);
                     }
                     args.build()
-                        .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                        .map_err(|e| AmbiError::engine(e.to_string()))?
                         .into()
                 }
                 Message::Tool { content, tool_id } => {
@@ -119,7 +125,7 @@ impl OpenAIEngine {
                         .tool_call_id(id)
                         .content(content.clone())
                         .build()
-                        .map_err(|e| AmbiError::EngineError(e.to_string()))?
+                        .map_err(|e| AmbiError::engine(e.to_string()))?
                         .into()
                 }
                 Message::System { .. } => continue,
@@ -143,7 +149,7 @@ impl OpenAIEngine {
                     .description(&t.description)
                     .parameters(t.parameters.clone())
                     .build()
-                    .map_err(|e| AmbiError::EngineError(e.to_string()))?;
+                    .map_err(|e| AmbiError::engine(e.to_string()))?;
 
                 let tool = ChatCompletionTool { function: func };
                 api_tools.push(ChatCompletionTools::Function(tool));
@@ -151,8 +157,34 @@ impl OpenAIEngine {
             request_builder.tools(api_tools);
         }
 
-        request_builder.build().map_err(|e| {
-            AmbiError::EngineError(format!("Failed to build OpenAI API request: {}", e))
-        })
+        request_builder
+            .build()
+            .map_err(|e| AmbiError::engine(format!("Failed to build OpenAI API request: {}", e)))
     }
+}
+
+/// Renders one native tool call back into Ambi's tag format,
+/// `[start]{"name":"...","args":{...}}[end]`.
+///
+/// `arguments` is a JSON string on the wire. It is parsed and re-serialized as a JSON value so the
+/// tag carries real JSON (`"args":{"k":"v"}`) rather than a quoted string. Arguments the model did
+/// not produce as valid JSON are passed through verbatim, which the tool parser already reports as
+/// a format error instead of silently dropping the call. Custom tool calls have no function schema
+/// Ambi can execute, so they are skipped.
+pub(super) fn render_tool_call(
+    call: &ChatCompletionMessageToolCalls,
+    start_tag: &str,
+    end_tag: &str,
+) -> Option<String> {
+    let ChatCompletionMessageToolCalls::Function(call) = call else {
+        return None;
+    };
+
+    let args = serde_json::from_str::<serde_json::Value>(&call.function.arguments)
+        .unwrap_or(serde_json::Value::String(call.function.arguments.clone()));
+
+    Some(format!(
+        "{start_tag}{body}{end_tag}",
+        body = serde_json::json!({ "name": call.function.name, "args": args })
+    ))
 }

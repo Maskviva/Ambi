@@ -152,8 +152,20 @@ impl Agent {
     ///
     /// Mutations performed on the engine may affect all `Agent` instances sharing
     /// the same engine handle.
-    pub fn get_llama_engine(&self) -> Arc<LLMEngine> {
+    pub fn llm_engine(&self) -> Arc<LLMEngine> {
         self.llm_engine.clone()
+    }
+
+    /// Returns a cloned `Arc` to the underlying [`LLMEngine`].
+    ///
+    /// # Deprecation
+    ///
+    /// The name promises a llama.cpp engine, but the handle is whatever backend the agent was
+    /// built with. Use [`Agent::llm_engine`] instead; this remains only so existing callers keep
+    /// compiling.
+    #[deprecated(since = "0.4.0", note = "use `Agent::llm_engine` instead")]
+    pub fn get_llama_engine(&self) -> Arc<LLMEngine> {
+        self.llm_engine()
     }
 
     /// Returns a cloned `Arc` to the [`AgentConfig`] instance.

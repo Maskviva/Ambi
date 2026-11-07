@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-07
+
+### Infrastructure & Refactoring
+
+- **llama-cpp-2 v0.1.161 Upgrade** — Complete adaptation of the `llama_cpp` provider to the new API:
+  - Updated tokenizer and decoding logic to use `model.vocab()`.
+  - Fixed sampler initialization with `n_vocab`.
+  - Integrated `MtmdBitmap` API updates.
+  - Resolved build environment issues.
+- **Project Structure** — Minor cleanup to improve code maintainability and remove dead code.
+- **Python Bindings Fix** — Resolved non-local `impl` definition warnings in `pyo3` macros.
+
 ## [0.3.8] — 2026-05-13
 
 ### New Features

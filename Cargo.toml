@@ -5,12 +5,13 @@ members = [
     "ambi-macros",
     "ambi-memory",
     "ambi-pipelines",
+    "examples/webAssembly"
 ]
 resolver = "2"
 
 [package]
 name = "ambi"
-version = "0.3.8"
+version = "0.4.0"
 edition = "2021"
 description = "A flexible, multi-backend, customizable AI agent framework, entirely based on Rust."
 license = "Apache-2.0"
@@ -48,22 +49,22 @@ macro = ["dep:ambi-macros"]
 wasm-opt = false
 
 [dependencies]
-log = "0.4"
-thiserror = "2.0.18"
-serde = { version = "1.0.228", features = ["derive", "rc"] }
-serde_json = "1.0.149"
-async-trait = "0.1.89"
-anyhow = "1.0.102"
-futures = "0.3.32"
-tiktoken-rs = "0.11.0"
-tokio-stream = "0.1.18"
+log = "0.4.35"
+thiserror = "2.0.21"
+serde = { version = "1.0.229", features = ["derive", "rc"] }
+serde_json = "1.0.154"
+async-trait = "0.1.92"
+anyhow = "1.0.104"
+futures = "0.3.34"
+tiktoken-rs = "0.12.1"
+tokio-stream = "0.1.19"
 anymap2 = "0.13.0"
 
-base64 = { version = "0.22.1", optional = true }
+base64 = { version = "0.23.1", optional = true }
 ambi-macros = { version = "0.1", path = "ambi-macros", optional = true }
-async-openai = { version = "0.38.0", features = ["chat-completion"], optional = true }
-llama-cpp-2 = { version = "0.1.146", optional = true }
-llama-cpp-sys-2 = { version = "0.1.146", optional = true }
+async-openai = { version = "0.43.0", features = ["chat-completion"], optional = true }
+llama-cpp-2 = { version = "0.1.161", optional = true }
+llama-cpp-sys-2 = { version = "0.1.161", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.52.1", features = ["rt-multi-thread", "sync", "time", "macros"] }

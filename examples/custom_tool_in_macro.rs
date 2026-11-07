@@ -51,6 +51,7 @@ async fn main() -> Result<()> {
         model_name: "gpt-4o-mini".to_string(),             // The specific model identifier.
         temp: 0.7,  // Controls randomness (higher values yield more creative outputs).
         top_p: 0.9, // Controls diversity via nucleus sampling.
+        supports_vision: false, // Disable visual multimodal capabilities
     });
 
     // Step 3: Instantiate the ChatRunner.

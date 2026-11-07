@@ -61,14 +61,14 @@ impl LLMEngineTrait for JsEngineBridge {
         let (tx, rx) = oneshot::channel();
         pending_requests()
             .lock()
-            .map_err(|e| AmbiError::EngineError(e.to_string()))?
+            .map_err(|e| AmbiError::engine(e.to_string()))?
             .insert(request_id, tx);
 
         self.chat_fn
             .call(Ok(req_json), ThreadsafeFunctionCallMode::NonBlocking);
 
         rx.await
-            .map_err(|_| AmbiError::EngineError("JS callback channel closed".into()))
+            .map_err(|_| AmbiError::engine("JS callback channel closed".to_string()))
     }
 
     async fn chat_stream(&self, request: LLMRequest, tx: Sender<ambi::error::Result<String>>) {

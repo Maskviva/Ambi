@@ -14,39 +14,23 @@ impl OpenAIEngine {
         let tool_tags = request.tool_tags.clone();
         let api_request = self.get_request(self.cfg.model_name.clone(), request, false)?;
 
-        let response = self
-            .client
-            .chat()
-            .create(api_request)
-            .await
-            .map_err(|e| AmbiError::EngineError(e.to_string()))?;
+        let response = self.client.chat().create(api_request).await.map_err(|e| {
+            AmbiError::engine_kind(crate::error::EngineErrorKind::Transport, e.to_string())
+        })?;
 
         let choice = response.choices.into_iter().next().ok_or_else(|| {
-            AmbiError::EngineError("No choices returned by OpenAI API".to_string())
+            AmbiError::engine_kind(
+                crate::error::EngineErrorKind::Transport,
+                "No choices returned by OpenAI API".to_string(),
+            )
         })?;
 
         if let Some(tool_calls) = choice.message.tool_calls {
-            let v = serde_json::to_value(&tool_calls).unwrap_or_default();
-            let mut simulated = String::new();
-            if let Some(arr) = v.as_array() {
-                for tc in arr {
-                    if let Some(func) = tc.get("function") {
-                        let name = func
-                            .get("name")
-                            .and_then(|n| n.as_str())
-                            .unwrap_or_default();
-                        let args = func
-                            .get("arguments")
-                            .and_then(|a| a.as_str())
-                            .unwrap_or_default();
-                        let (start_tag, end_tag) = &tool_tags;
-                        simulated.push_str(&format!(
-                            "{}{{\"name\":\"{}\",\"args\":{}}}{}",
-                            start_tag, name, args, end_tag
-                        ));
-                    }
-                }
-            }
+            let (start_tag, end_tag) = &tool_tags;
+            let simulated: String = tool_calls
+                .iter()
+                .filter_map(|tc| super::translator::render_tool_call(tc, start_tag, end_tag))
+                .collect();
             return Ok(simulated);
         }
 

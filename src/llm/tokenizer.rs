@@ -6,6 +6,16 @@ use crate::error::{AmbiError, Result};
 ///
 /// The framework requires this interface to be extremely fast and purely synchronous,
 /// as it will be called frequently in stream processors and context eviction algorithms.
+///
+/// # Accuracy contract
+///
+/// Implementations are used for *accounting*, not for exact prompt sizing: the number returned
+/// drives [`crate::config::EvictionStrategy`] and the per-message token bookkeeping. A fast
+/// approximation is therefore acceptable, but it must be stable and monotonic — two calls on the
+/// same text must agree, and a longer text must not count fewer tokens.
+///
+/// Backends that can produce an exact count through their own vocabulary are expected to expose it
+/// separately (see `LlamaEngine::count_tokens_exact`) rather than making this method asynchronous.
 pub trait TokenizerTrait: Send + Sync {
     /// Synchronously returns the estimated number of tokens consumed by the given text.
     fn count_tokens(&self, text: &str) -> Result<usize>;
@@ -28,9 +38,8 @@ impl DefaultTokenizer {
     /// (This operation consumes a few megabytes of resident memory and takes a few
     /// milliseconds to load on the first initialization).
     pub fn make() -> Result<Self> {
-        let bpe = tiktoken_rs::cl100k_base().map_err(|e| {
-            AmbiError::EngineError(format!("Failed to init default tokenizer: {}", e))
-        })?;
+        let bpe = tiktoken_rs::cl100k_base()
+            .map_err(|e| AmbiError::engine(format!("Failed to init default tokenizer: {}", e)))?;
 
         Ok(Self { bpe })
     }

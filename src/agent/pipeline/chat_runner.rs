@@ -112,8 +112,9 @@ impl ChatRunner {
 
         let has_image = parts.iter().any(|p| matches!(p, ContentPart::Image { .. }));
         if has_image && !agent.llm_engine.supports_multimodal() {
-            Err(AmbiError::EngineError(
-                "Security Check Failed: The current LLM engine does not support multimodal (image) inputs.".into()
+            Err(AmbiError::engine_kind(
+                crate::error::EngineErrorKind::InvalidRequest,
+                "Security Check Failed: The current LLM engine does not support multimodal (image) inputs.".to_string(),
             ))
         } else {
             Ok(())

@@ -1,3 +1,5 @@
+#![allow(non_local_definitions)]
+
 use ambi::agent::core::{Agent, AgentState};
 use ambi::agent::pipeline::Pipeline as AmbiPipeline;
 use ambi::config::EvictionStrategy;
@@ -161,17 +163,17 @@ impl LLMEngineTrait for PyEngineBridge {
         let (tx, rx) = oneshot::channel();
         pending_reqs()
             .lock()
-            .map_err(|e| AmbiError::EngineError(e.to_string()))?
+            .map_err(|e| AmbiError::engine(e.to_string()))?
             .insert(request_id, tx);
 
         Python::with_gil(|py| -> PyResult<()> {
             self.chat_handler.call1(py, (req_json,))?;
             Ok(())
         })
-        .map_err(|e| AmbiError::EngineError(format!("Python handler error: {}", e)))?;
+        .map_err(|e| AmbiError::engine(format!("Python handler error: {}", e)))?;
 
         rx.await
-            .map_err(|_| AmbiError::EngineError("Python handler channel closed".into()))
+            .map_err(|_| AmbiError::engine("Python handler channel closed".to_string()))
     }
 
     async fn chat_stream(
@@ -351,6 +353,7 @@ impl PyLLMEngineConfig {
         base_url: Option<String>,
         temp: Option<f64>,
         top_p: Option<f64>,
+        supports_vision: Option<bool>,
     ) -> Self {
         use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
         let cfg = OpenAIEngineConfig {
@@ -359,6 +362,7 @@ impl PyLLMEngineConfig {
             model_name,
             temp: temp.unwrap_or(0.0) as f32,
             top_p: top_p.unwrap_or(0.0) as f32,
+            supports_vision: supports_vision.unwrap_or(false),
         };
         Self {
             inner: Mutex::new(Some(LLMEngineConfig::OpenAI(cfg))),
@@ -521,7 +525,7 @@ impl PyAgent {
     }
 
     fn count_tokens(&self, text: String) -> PyResult<u32> {
-        let engine = self.inner.get_llama_engine();
+        let engine = self.inner.llm_engine();
         engine
             .count_tokens(&text)
             .map(|n| n as u32)

@@ -136,7 +136,7 @@ impl JsAgent {
 
     #[napi]
     pub fn count_tokens(&self, text: String) -> Result<u32> {
-        let engine = self.inner.get_llama_engine();
+        let engine = self.inner.llm_engine();
         engine
             .count_tokens(&text)
             .map(|n| n as u32)

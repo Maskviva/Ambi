@@ -112,7 +112,10 @@ impl LLMEngine {
                 llama_cfg.validate()?;
                 let engine = LlamaEngine::load(llama_cfg).map_err(|e| {
                     log::error!("Failed to load Llama engine: {}", e);
-                    AmbiError::EngineError(format!("Failed to load Llama engine: {}", e))
+                    AmbiError::engine_kind(
+                        crate::error::EngineErrorKind::ModelLoad,
+                        format!("Failed to load Llama engine: {}", e),
+                    )
                 })?;
 
                 Ok(LLMEngine {
@@ -125,7 +128,10 @@ impl LLMEngine {
                 openai_cfg.validate()?;
                 let engine = OpenAIEngine::load(openai_cfg).map_err(|e| {
                     log::error!("Failed to load OpenAI engine: {}", e);
-                    AmbiError::EngineError(format!("Failed to load OpenAI engine: {}", e))
+                    AmbiError::engine_kind(
+                        crate::error::EngineErrorKind::ModelLoad,
+                        format!("Failed to load OpenAI engine: {}", e),
+                    )
                 })?;
 
                 Ok(LLMEngine {
@@ -208,7 +214,7 @@ impl LLMEngine {
     /// Downcasts the engine backend to a concrete type.
     pub fn backend_downcast_ref<T: 'static>(&self) -> Result<&T> {
         self.backend.as_any().downcast_ref::<T>().ok_or_else(|| {
-            AmbiError::EngineError(format!(
+            AmbiError::engine(format!(
                 "Backend is not of type {}",
                 std::any::type_name::<T>()
             ))

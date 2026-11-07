@@ -32,7 +32,7 @@ impl ChatRunner {
                     }
                 }
                 Err(e) => {
-                    let engine_err = AmbiError::EngineError(format!("LLM Engine Error: {}", e));
+                    let engine_err = AmbiError::engine(format!("LLM Engine Error: {}", e));
                     let _ = tx_out.send(Err(engine_err.clone())).await;
                     last_error = Some(engine_err);
                     break;
