@@ -11,7 +11,7 @@ resolver = "2"
 
 [package]
 name = "ambi"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "A flexible, multi-backend, customizable AI agent framework, entirely based on Rust."
 license = "Apache-2.0"
@@ -44,6 +44,7 @@ rocm = ["llama-cpp", "llama-cpp-2/rocm", "llama-cpp-sys-2/rocm"]
 dynamic-link = ["llama-cpp", "llama-cpp-2/dynamic-link", "llama-cpp-sys-2/dynamic-link"]
 
 macro = ["dep:ambi-macros"]
+sub-agent = []
 
 [package.metadata.wasm-pack.profile.dev]
 wasm-opt = false
@@ -98,7 +99,7 @@ opt-level = 2
 opt-level = 3
 
 [package.metadata.docs.rs]
-features = ["openai-api", "llama-cpp", "mtmd", "macro"]
+features = ["openai-api", "llama-cpp", "mtmd", "macro", "sub-agent"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 # cargo clippy --target=wasm32-unknown-unknown --no-default-features --features "openai-api,macro" -- -D warnings

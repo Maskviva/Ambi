@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-07
+
+### New Features
+
+- **Leaf Sub-Agent Support (`sub-agent` feature)**:
+  - Added lightweight, non-recursive leaf sub-agent mountable as a tool on `ChatRunner`.
+  - Feature-gated under `sub-agent` (disabled by default) preserving backwards compatibility with existing pipelines.
+  - Enabled at runtime via `ChatRunner::with_leaf()` or `ChatRunner::with_leaf_config(LeafConfig)`.
+  - Provides strict conversation state isolation (`AgentState` allocated per call and dropped on return) with inherited parent tool snapshots and engine re-use.
+  - Supports parallel sub-task execution when the parent LLM emits multiple tool calls in a single turn.
+  - Returns only final synthesized answers from sub-agents, stripping intermediate thought / tool-call blocks.
+
+### CI & Documentation
+
+- **GitHub Pages Auto-Deployment**:
+  - Added `.github/workflows/docs.yml` for automated building and deployment of the VitePress documentation site upon push to `main`.
+  - Configured repository base path (`/Ambi/`) in `docs/.vitepress/config.mts`.
+
 ## [0.4.0] — 2026-11-07
 
 ### Infrastructure & Refactoring

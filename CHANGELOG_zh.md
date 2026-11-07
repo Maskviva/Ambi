@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-07
+
+### 新功能
+
+- **Leaf 子智能体支持 (`sub-agent` 特性)**：
+  - 新增轻量级、结构性非递归的叶子（Leaf）子智能体，以工具形式挂载到 `ChatRunner`。
+  - 通过 `sub-agent` 特性按需开启（默认关闭），不改变现有 Pipeline 与已有代码的默认行为。
+  - 运行时通过 `ChatRunner::with_leaf()` 或 `ChatRunner::with_leaf_config(LeafConfig)` 启用。
+  - 会话状态严格隔离：单次调用独立分配临时 `AgentState`，调用结束后自动释放；共享复用父级模型引擎与已注册工具快照。
+  - 具备并发能力：模型在单轮内发出多个叶子调用时自动并行执行。
+  - 输出精炼：子智能体仅返回最终提炼答案，自动剔除中间思考与工具调用块。
+
+### CI 与文档
+
+- **GitHub Pages 自动化部署**：
+  - 新增 `.github/workflows/docs.yml`，在推送到 `main` 分支时自动构建并部署 VitePress 文档站。
+  - 在 `docs/.vitepress/config.mts` 中适配 GitHub Pages 项目仓库子路径 (`/Ambi/`)。
+
 ## [0.4.0] — 2026-11-07
 
 ### 基础设施与重构

@@ -58,3 +58,5 @@ pub trait Pipeline {
 }
 
 pub use chat_runner::ChatRunner;
+#[cfg(feature = "sub-agent")]
+pub use chat_runner::LeafConfig;

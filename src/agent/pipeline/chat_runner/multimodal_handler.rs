@@ -44,21 +44,65 @@ pub(crate) struct LoopTooling<'a> {
     pub formatter_factory: &'a FormatterFactory,
 }
 
+pub(crate) struct ResolvedTooling {
+    pub tools_def: Arc<Vec<ToolDefinition>>,
+    pub cached_tool_prompt: Arc<String>,
+    pub tool_map: Arc<HashMap<String, Arc<DynToolObj>>>,
+    pub tool_parser: Arc<ToolCallParserObj>,
+    pub formatter_factory: FormatterFactory,
+}
+
+impl ResolvedTooling {
+    pub(crate) fn from_agent(agent: &Agent) -> Self {
+        Self {
+            tools_def: Arc::clone(&agent.tools_def),
+            cached_tool_prompt: Arc::clone(&agent.cached_tool_prompt),
+            tool_map: Arc::clone(&agent.tool_map),
+            tool_parser: Arc::clone(&agent.tool_parser),
+            formatter_factory: Arc::clone(&agent.formatter_factory),
+        }
+    }
+
+    pub(crate) fn as_loop_tooling(&self) -> LoopTooling<'_> {
+        LoopTooling {
+            tools_def: &self.tools_def,
+            cached_tool_prompt: &self.cached_tool_prompt,
+            tool_map: &self.tool_map,
+            tool_parser: &self.tool_parser,
+            formatter_factory: &self.formatter_factory,
+        }
+    }
+}
+
 pub(crate) struct RunCtx<'a> {
     pub loop_config: LoopConfig<'a>,
     pub loop_tooling: LoopTooling<'a>,
     pub tx_out: Option<&'a Sender<Result<String>>>,
     pub evict_handler: &'a Option<EvictionHandler>,
+    /// When `true` (used by leaf sub-agents), returns only the final round's formatted output
+    /// rather than concatenating intermediate rounds and `[TOOL_CALL]` display blocks.
+    pub final_answer_only: bool,
 }
 
 /// # Handler Implementation
 impl ChatRunner {
+    fn resolve_tooling(&self, agent: &Agent) -> Result<ResolvedTooling> {
+        #[cfg(feature = "sub-agent")]
+        if let Some(ref leaf_cfg) = self.leaf_config {
+            return super::leaf::build_augmented_tooling(agent, self.maximum_concurrency, leaf_cfg);
+        }
+
+        Ok(ResolvedTooling::from_agent(agent))
+    }
+
     pub(crate) async fn chat_multimodal(
         &self,
         agent: &Agent,
         state: &Arc<RwLock<AgentState>>,
         parts: Vec<ContentPart>,
     ) -> Result<String> {
+        let resolved_tooling = self.resolve_tooling(agent)?;
+
         let tokens = agent.llm_engine.count_tokens(
             &Message::User {
                 content: parts.clone(),
@@ -76,15 +120,10 @@ impl ChatRunner {
                 system_prompt: &agent.config.system_prompt,
                 eviction_strategy: agent.config.eviction_strategy.clone(),
             },
-            loop_tooling: LoopTooling {
-                tools_def: &agent.tools_def,
-                cached_tool_prompt: &agent.cached_tool_prompt,
-                tool_map: &agent.tool_map,
-                tool_parser: &agent.tool_parser,
-                formatter_factory: &agent.formatter_factory,
-            },
+            loop_tooling: resolved_tooling.as_loop_tooling(),
             tx_out: None,
             evict_handler: &agent.on_evict_handler,
+            final_answer_only: false,
         };
 
         Self::run_loop(
@@ -103,6 +142,8 @@ impl ChatRunner {
         state: &Arc<RwLock<AgentState>>,
         parts: Vec<ContentPart>,
     ) -> Result<Pin<Box<ReceiverStream<Result<String>>>>> {
+        let resolved_tooling = self.resolve_tooling(agent)?;
+
         let (tx_out, rx_out) = channel::<Result<String>>(1024);
         let tx_out_for_panic = tx_out.clone();
         #[cfg(target_arch = "wasm32")]
@@ -135,20 +176,15 @@ impl ChatRunner {
                     system_prompt: &agent_clone.config.system_prompt,
                     eviction_strategy: agent_clone.config.eviction_strategy.clone(),
                 },
-                loop_tooling: LoopTooling {
-                    tools_def: &agent_clone.tools_def,
-                    cached_tool_prompt: &agent_clone.cached_tool_prompt,
-                    tool_map: &agent_clone.tool_map,
-                    tool_parser: &agent_clone.tool_parser,
-                    formatter_factory: &agent_clone.formatter_factory,
-                },
+                loop_tooling: resolved_tooling.as_loop_tooling(),
                 tx_out: Some(&tx_out_clone),
                 evict_handler: &agent_clone.on_evict_handler,
+                final_answer_only: false,
             };
 
             let mode = ExecutionMode::Stream {
                 tx_out: &tx_out_clone,
-                formatter_factory: &agent_clone.formatter_factory,
+                formatter_factory: &resolved_tooling.formatter_factory,
             };
 
             if let Err(e) = Self::run_loop(
@@ -298,7 +334,7 @@ impl ChatRunner {
 
             snapshot_len = snapshot_len.saturating_sub(evicted_count);
 
-            if ctx.tx_out.is_none() {
+            if ctx.tx_out.is_none() && !ctx.final_answer_only {
                 let mut formatter = (ctx.loop_tooling.formatter_factory)();
                 final_formatted_output.push_str(&formatter.push(&full_output));
                 final_formatted_output.push_str(&formatter.flush());
@@ -327,6 +363,11 @@ impl ChatRunner {
             };
 
             if tool_calls.is_empty() {
+                if ctx.tx_out.is_none() && ctx.final_answer_only {
+                    let mut formatter = (ctx.loop_tooling.formatter_factory)();
+                    final_formatted_output.push_str(&formatter.push(&full_output));
+                    final_formatted_output.push_str(&formatter.flush());
+                }
                 break;
             }
 
@@ -334,7 +375,7 @@ impl ChatRunner {
                 let mut formatted_tools = String::with_capacity(1024);
                 Self::process_tool_calls_output(&tool_calls, &mut formatted_tools);
                 let _ = tx.send(Ok(formatted_tools)).await;
-            } else {
+            } else if !ctx.final_answer_only {
                 Self::process_tool_calls_output(&tool_calls, &mut final_formatted_output);
             }
 

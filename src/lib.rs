@@ -110,5 +110,7 @@ pub use ambi_macros as macros;
 
 pub use agent::core::{Agent, AgentState};
 pub use agent::pipeline::chat_runner::ChatRunner;
+#[cfg(feature = "sub-agent")]
+pub use agent::pipeline::chat_runner::LeafConfig;
 pub use llm::{LLMEngine, LLMEngineConfig};
 pub use types::{ContentPart, Message};
