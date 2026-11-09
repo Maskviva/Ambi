@@ -1,191 +1,93 @@
-# Architecture Overview
+# Architecture: separate capabilities, state and execution
 
-This page explains how Ambi works under the hood. You don't need to know all of this to use the framework, but it helps if you want to extend it.
+Ambi's core is intentionally small. It is not a workflow graph or a multi-agent registry. It provides a reusable **Agent**, a caller-owned **AgentState**, and a replaceable **Pipeline** that defines execution.
 
-## Agent and AgentState are separate
+Before diving into the code, read [Design philosophy](/advanced/design-philosophy); [Leaf](/guide/leaf) describes an optional instance of these ideas.
 
-This is the most important design decision. `Agent` is a read-only blueprint. `AgentState` is mutable conversation memory.
+## The three essential boundaries
 
-```
-Agent (read-only, all fields pub(crate) / Arc-wrapped → zero-cost clone)
-├── llm_engine (Arc<LLMEngine>)  → model backend (pub(crate))
-├── config (Arc<AgentConfig>)    → system prompt, template, eviction strategy
-├── tools_def / tool_map         → registered tools and their definitions
-├── tool_parser                  → how tool calls are parsed from LLM output
-├── cached_tool_prompt           → pre-rendered tool instruction string
-├── formatter_factory            → how stream output is cleaned up
-└── on_evict_handler             → callback for evicted messages (receives &AgentState)
-
-AgentState (mutable, RwLock)
-├── session_id             → unique conversation identifier (KV cache slotting, tracing)
-├── dynamic_context        → volatile session data (RAG results, env vars)
-├── chat_history           → pure FIFO queue of User / Assistant / Tool events
-└── extensions             → anymap2 for custom state
-```
-
-Note: Agent fields are `pub(crate)` — external code composes with Agent through the public
-API (`chat()`, `chat_stream()`, etc.) rather than directly accessing internal fields.
-
-This separation means:
-
-- **One Agent, many conversations** – clone is just an Arc refcount bump
-- **The Agent build happens once** – including blocking engine loading
-- **State is fully serializable** – you can persist/restore conversations
-- **Maximized KV Cache hit rates** – system prompt (static) is never evicted from the head
-
-## The ReAct loop
-
-When you call `runner.chat()` or `runner.chat_stream()`, this happens:
-
-```
-User Input
-    │
-    ▼
-┌──────────────────────────────────────────┐
-│ 1. Push user message to ChatHistory      │
-│ 2. Build LLMRequest                      │
-│    ├─ system_prompt + dynamic_context    │
-│    ├─ cached_tool_prompt                 │
-│    ├─ filtered history (User/Asst/Tool)  │
-│    ├─ formatted_prompt string            │
-│    └─ extracted images                   │
-└──────────┬───────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────┐
-│ 3. LLMEngine.chat() / chat_stream()      │
-│    └─ Returns raw text                   │
-└──────────┬───────────────────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────┐
-│ 4. ToolCallParser.parse(output)          │
-│    └─ Extracts tool calls from text      │
-└──────────┬───────────────────────────────┘
-           │
-    ┌──────┴──────────┐
-    ▼                  ▼
-No tools?         Tools found?
-    │                  │
-    ▼                  ▼
-Return text   ┌────────────────────────────┐
-              │ 5. Parallel execution      │
-              │    .buffered(max_concurrency)│
-              │    timeout per tool        │
-              │    ghost cancellation      │
-              └──────────┬─────────────────┘
-                         │
-                         ▼
-              ┌────────────────────────────┐
-              │ 6. Push tool results       │
-              │    back to ChatHistory     │
-              │    as Tool messages        │
-              └──────────┬─────────────────┘
-                         │
-                         ▼
-              ┌────────────────────────────┐
-              │ 7. Eviction check          │
-              │    Pure FIFO (no System)   │
-              │    on_evict(state, msgs)   │
-              └──────────┬─────────────────┘
-                         │
-                         ▼
-              ┌────────────────────────────┐
-              │ 8. Loop back to step 3     │
-              │    (max_iterations)        │
-              └────────────────────────────┘
+```text
+                    +-----------------------------+
+                    | Agent                       |
+                    | Arc<LLMEngine>              |
+                    | config / tools / parser     |
+                    | stream formatter factory    |
+                    +--------------+--------------+
+                                   |
+         +-------------------------+--------------------------+
+         |                                                    |
+ +-------v----------------+                         +---------v----------+
+ | ChatRunner : Pipeline  |                         | Your Pipeline       |
+ | ReAct + tool execution |                         | your execution rule |
+ +-----------+------------+                         +---------+----------+
+             |                                                |
+             +--------------------+---------------------------+
+                                  |
+                       +----------v----------+
+                       | AgentState          |
+                       | session_id          |
+                       | chat_history        |
+                       | dynamic_context     |
+                       | extensions          |
+                       +---------------------+
 ```
 
-Steps 3–8 repeat until either: no tool calls are produced, or `max_iterations` is reached.
+`Agent` is cheap to clone because its internals are shared with `Arc`. `AgentState` is serialized with `serde` except its type-erased extension map. `AgentState::new_shared()` returns `Arc<RwLock<AgentState>>`; you should normally allocate **one independent state per conversation**.
 
-### ChatRunner concurrency control
+The same `Agent` can serve many states. **Do not interpret the `RwLock` as a run-level transaction**: separate operations lock/unlock the state independently. Concurrent requests using the exact same state require application-level ordering if you need a strictly sequential conversation.
 
-`ChatRunner` holds `maximum_concurrency` (default 5 via `ChatRunner::default()`), allowing
-flexible rate-limiting for parallel tool executions. You can create a custom runner:
+## A `ChatRunner` request
 
-```rust
-use ambi::ChatRunner;
+1. Validate input (e.g. image support and non-zero tool concurrency).
+2. Resolve tools. With an opted-in Leaf, augment the parent tool snapshot for that run.
+3. Append the user message to `AgentState.chat_history`.
+4. Build `LLMRequest` from the system prompt, dynamic context, tool definitions, filtered history, template and images. It includes `session_id`.
+5. Invoke the engine; parse tool requests from model output.
+6. Execute tool calls with a per-loop concurrency bound and per-tool timeout/retry policy.
+7. Feed tool results back into history, continue until a final response or iteration limit.
+8. Account for history tokens and evict old messages according to the configured budget.
 
-// Default: max 5 concurrent tool executions
-let runner = ChatRunner::default();
+`chat()` returns `Result<String>`; `chat_stream()` returns a stream of `Result<String>` chunks. They share the same internal ReAct loop but expose different output delivery semantics.
 
-// Custom limit
-let runner = ChatRunner::new(3);
-```
+## Engine boundary
 
-## Template rendering
+`LLMEngineTrait` defines `chat(LLMRequest) -> Result<String>`, `chat_stream(LLMRequest, Sender<Result<String>>)`, `reset_context()` and `supports_multimodal()` (plus downcasting). It is intentionally small and text-oriented; it does **not** expose a universal structured model event protocol.
 
-`ChatTemplate` defines how messages are serialized into the raw prompt string. Each variant stores prefix/suffix tags for system, user, assistant, and tool roles.
+- **OpenAI-compatible API:** HTTP backend with a concurrency semaphore and request timeout; image capability is configured explicitly or inferred for recognized model prefixes.
+- **llama.cpp:** native-only worker thread with bounded commands, cancellation checks and a shared KV cache. `session_id` helps prevent treating a different conversation as the same cached prefix. Concurrent sessions may incur re-prefill.
+- **Custom:** provide `LLMEngineConfig::Custom(Box<dyn LLMEngineTrait>)`.
 
-```
-Example: ChatML format
-──────────────────────
-<|im_start|>system
-You are helpful.
-<|im_end|>
-<|im_start|>user
-Hello
-<|im_end|>
-<|im_start|>assistant
-Hi there
-<|im_end|>
-<|im_start|>assistant   ← generation starts here
-```
+`Agent::llm_engine()` exposes an `Arc<LLMEngine>` for custom pipeline authors without exposing the agent's private fields.
 
-The engine receives the rendered prompt string. OpenAI engines additionally receive the structured `LLMRequest` with separated system/history/tools fields.
+## Leaf shares mechanisms, not identity
 
-## Pipeline trait
+The optional Leaf is built on `ChatRunner` and the `Tool` mechanism. The parent sees the original tools plus `spawn_leaf`. The Leaf has the original tool snapshot **without** `spawn_leaf`, and executes `run_loop` with a fresh `AgentState` and `final_answer_only = true`.
 
-`Pipeline` is the trait that defines the execution contract. `ChatRunner` is the built-in implementation, but you can write your own:
+It is not a persistent child Agent. It does not inherit parent chat history; it **does** share the inference engine and tools. See [Leaf task delegation](/guide/leaf) for API and safety constraints.
 
-```rust
-// Native (Send + Sync)
-pub trait Pipeline: Send + Sync {
-    fn execute(
-        &self, agent: &Agent, state: &Arc<RwLock<AgentState>>, input: Vec<ContentPart>
-    ) -> impl Future<Output = Result<String>> + Send;
+## Runtime guarantees and non-guarantees
 
-    fn execute_stream(
-        &self, agent: &Agent, state: &Arc<RwLock<AgentState>>, input: Vec<ContentPart>
-    ) -> impl Future<Output = Result<Pin<Box<ReceiverStream<Result<String>>>>>> + Send;
-}
+| Topic | Current behavior | Caveat |
+| --- | --- | --- |
+| State | Session history and dynamic context are separate from Agent | No automatic full-run lock on a shared state |
+| Eviction | FIFO messages with cached approximate token totals | Not atomic tool-call-group eviction or an exact provider token guarantee |
+| Tool retries | Timeout retries are allowed only for tools marked idempotent | Cancellation cannot undo external side effects |
+| Leaf | Temporary state and final-answer-only result | Shares engine and original tool permissions |
+| Pipelines | Implementable `Pipeline` trait | No built-in arbitrary DAG composition |
+| Streaming | Response channel with cancellation-sensitive processing | Remote requests and external operations may have their own cancellation semantics |
 
-// WASM (no Send + Sync bounds)
-#[cfg(target_arch = "wasm32")]
-pub trait Pipeline {
-    // Same methods without Send + Sync
-}
-```
+The runtime is a substrate for application-defined behavior. If your application requires audit-grade effect tracking, durable task queues or access controls, build them explicitly above these mechanisms.
 
-The pipeline has two modes:
-- **Sync** – blocks until the full response is ready (internally runs the same ReAct loop)
-- **Stream** – returns a `ReceiverStream` that the caller can iterate
+## Source map
 
-## Extension points (all trait-based)
+| Concern | Code |
+| --- | --- |
+| Agent / State | `src/agent/core.rs`, `core/builder.rs` |
+| Pipeline / runner | `src/agent/pipeline.rs`, `pipeline/chat_runner.rs` |
+| ReAct loop | `src/agent/pipeline/chat_runner/multimodal_handler.rs` |
+| Leaf | `src/agent/pipeline/chat_runner/leaf.rs` |
+| Tools | `src/types/tool_def.rs`, `src/agent/tool/manager.rs` |
+| Engines | `src/llm/engine.rs`, `src/llm/providers/` |
+| History | `src/agent/core/history.rs` |
 
-| What you can replace | Trait | Default |
-|----------------------|-------|---------|
-| LLM backend | `LLMEngineTrait` | OpenAI / llama.cpp |
-| Tool implementation | `Tool` | None (you provide) |
-| Tool call parsing | `ToolCallParser` | Tag-based `[TOOL_CALL]` |
-| Stream formatting | `StreamFormatter` | Passthrough |
-| Execution pipeline | `Pipeline` | `ChatRunner` |
-| Tokenizer | `TokenizerTrait` | `cl100k_base` (tiktoken) |
-
-## Cross-platform runtime
-
-The `runtime` module abstracts platform differences:
-
-| Function | Native (tokio) | WASM |
-|----------|----------------|------|
-| `spawn` | `tokio::spawn` | `wasm_bindgen_futures::spawn_local` |
-| `spawn_blocking` | `tokio::task::spawn_blocking` | Direct execution (single-threaded) |
-| `sleep` | `tokio::time::sleep` | `gloo_timers::future::sleep` |
-| `timeout` | `tokio::time::timeout` | Future race with timer |
-| `SendSync` | `Send + Sync` | Empty trait (no-op) |
-
-For WASM, the `llama-cpp` feature is compile-time blocked:
-```rust
-#[cfg(all(target_arch = "wasm32", feature = "llama-cpp"))]
-compile_error!("llama-cpp not supported on wasm32");
-```
+Next: [Custom Pipeline](/advanced/custom-pipeline) · [Custom Engine](/advanced/custom-engine) · [Context Eviction](/advanced/context-eviction).

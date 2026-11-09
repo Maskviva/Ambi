@@ -1,124 +1,81 @@
-# 设计理念
+# 设计理念：小型 Runtime，开放的上限
 
-Ambi 的设计理念贯穿于整个框架的演进脉络。理解这四条原则，能帮你在扩展框架时做出更好的决策。
+Ambi 是一个**小而可组合的 Rust AI Agent Runtime**。它提供模型推理、工具执行、上下文管理和智能体执行循环等基础机制，但不规定所有智能体必须如何思考、规划或协作。
 
----
+这是一条架构边界，而不是宣称“有了 Trait 就能自动组合任何工作流”。公共接口有明确的职责，也存在现实限制。目标是让核心始终可理解，并尽量让新行为通过组合扩展，而不是持续膨胀核心。
 
-## 1. 把自由还给开发者——一切皆可替换
+## 组合优于继承
 
-Ambi 拒绝"约定优于配置"的隐形绑定。**LLM 后端、工具解析器、流式格式化器、甚至整个执行管道，全部通过 trait 暴露为可替换的组件。**
+Ambi 不追求 `BaseAgent`、`WorkerAgent`、`SupervisorAgent` 等类层级。开发者根据需求组合能力：
 
-| 可替换组件 | Trait | 替换方式 |
-|-----------|-------|---------|
-| LLM 后端 | `LLMEngineTrait` | `LLMEngineConfig::Custom(...)` |
-| 工具调用解析器 | `ToolCallParser` | `agent.with_tool_parser(MyParser)` |
-| 流式格式化器 | `StreamFormatter` | `agent.with_stream_formatter(|| Box::new(MyFormatter))` |
-| 执行管道 | `Pipeline` | `Pipeline.custom(handler)` 或实现 `Pipeline` |
-| 分词器 | `TokenizerTrait` | `engine.with_custom_tokenizer(MyTokenizer)` |
+| 概念 | 职责 | 扩展方式 |
+| --- | --- | --- |
+| `Agent` | 可共享的 Engine、配置、工具、解析器与格式化器 | Builder 与组件组合 |
+| `AgentState` | 会话历史与动态上下文 | 独立会话，或显式 `fork` |
+| `Pipeline` | 决定请求如何执行 | 实现自己的执行策略 |
+| `LLMEngineTrait` | 定义模型生成完整结果与流式结果的方式 | 内置或自定义后端 |
+| `Tool` | 提供类型化的外部操作 | 应用开发者实现 |
+| `ToolCallParser`、`StreamFormatter`、`TokenizerTrait` | 协议处理与展示边界 | 替换具体实现 |
 
-在本地 `llama.cpp` 和云端 OpenAI 之间一行配置切换，也可以实现 `LLMEngineTrait` 接入任意私有模型。这种 **trait-first** 的设计让框架成为一组可组装的"轮子"，而不是一辆封死引擎盖的"整车"。
+**Ambi 的内置用例决定下限，而不应该规定上限。** 第三方可以实现 Ambi 作者没有预想过的 `Pipeline`，而无需将那套策略纳入核心 Crate。
 
-```rust
-// 一行切换引擎：
-let config = LLMEngineConfig::OpenAI(openai_cfg);
-//  vs
-let config = LLMEngineConfig::Llama(llama_cfg);
+但应区分：**可替换并不等于任意 Pipeline 都能直接嵌套组合**。例如目前 `StandardRagPipeline` 内部持有 `ChatRunner`，并不是泛型的 `Rag<P>` 包装器。Ambi 目前也不是通用图工作流引擎。
+
+## 树、枝、叶：关于执行关系的比喻
+
+```text
+                                Agent
+                        （共享模型、工具、配置）
+                                  │
+                     ┌────────────┴────────────┐
+                     │                         │
+                 ChatRunner                自定义 Pipeline
+                 （ReAct 枝）                （另一条枝）
+                     │
+               可选 spawn_leaf
+                     │
+               ┌─────┴─────┐
+               │           │
+             Leaf A       Leaf B
+          （临时状态）   （临时状态）
+               │           │
+             最终结果     最终结果
+
+           AgentState 独立于 Agent，交给 Pipeline 使用。
 ```
 
-## 2. 极致的开发体验——五行使者
+**Agent 是树，Pipeline 是枝，Leaf 是叶。** 这是一种**设计比喻**，不是 Rust 继承体系，也不要求所有 Pipeline 都必须生成 Leaf。不同的枝可以产生不同的能力；开发者也可以通过 Trait 嫁接自己的实现。
 
-从第一天起，Ambi 就追求**用最少的代码创造生产级 Agent**。5 行核心代码即可启动一个带云端推理的对话代理：
+为什么不叫 Sub-agent？仅仅因为某个任务由父级调用，并不代表它必须拥有一个长期存在的完整 `Agent` 身份。在 Ambi 0.4.1 中，Leaf 是挂载在 `ChatRunner` 工具集合上的**一次性执行**：独立创建临时会话，完成任务后只返回收敛的结果，随后丢弃。这样，任务过程中的大段上下文不会直接填满父级对话历史。
 
-```rust
-let agent = Agent::make(config).await?
-    .preamble("You are a helpful assistant.");
-let state = AgentState::new_shared("session-1");
-let runner = ChatRunner::default();
-let reply = runner.chat(&agent, &state, "Hello!").await?;
-```
+**「用完即丢」说的是执行身份与会话状态，不是外部世界无副作用。** 当前 Leaf 共享父级引擎，继承其已注册工具，因此仍可能执行有副作用的操作。详见 [Leaf 任务委派](/zh/guide/leaf)。
 
-`#[tool]` 过程宏进一步将工具定义缩减为普通异步 Rust 函数，自动生成 JSON Schema、超时和重试逻辑：
+## Runtime 管机制，应用决定策略
 
-```rust
-#[tool(name = "get_weather", description = "Get weather for a city")]
-async fn get_weather(city: String) -> Result<WeatherOutput, ToolErr> {
-    // 你的逻辑——无需手动实现 trait，无需手写 schema
-}
-```
+Runtime 必须认真承担模型调用、工具超时和重试、流式处理、上下文历史统计、错误传递等机制责任。应用负责选择 System Prompt、执行策略、工具权限、持久化方式和业务语义。
 
-这不是魔法，而是通过精心设计的零成本抽象和智能默认值，把繁琐的样板代码压缩进框架底层。
+这也是 `ambi-pipelines`、`ambi-memory` 和 `ambi-macros` 保持为独立 Crate 的原因：高级能力不应变成所有使用者必须接受的认知架构。
 
-## 3. 坚不可摧的鲁棒性——生产环境不是游乐场
+保持简洁不意味着模糊边界：
 
-Ambi 在设计上对藏匿在长尾中的失败模式有近乎偏执的防范：
+- 历史驱逐使用的 Token 统计是**近似值**，不能保证所有模型都永不超过上下文窗口。
+- `AgentState` 与 `Agent` 分离，但**同一个可变 State 的并发 Run** 并不会天然形成完整会话级串行化。
+- 工具 Future 超时或取消，**不代表外部操作已经撤销**。
+- 本地 `llama.cpp` 引擎由共享 Worker 与 KV Cache 服务，Leaf 之间可能产生资源竞争。
 
-### OOM 保护
-流式缓冲区有硬上限（`max_buffer_size`，默认 8192）。缓冲区超限时自动清空并记录错误，防止失控生成撑爆内存。
+代码层面的结构参见 [架构](/zh/advanced/architecture)，边界参见 [上下文驱逐](/zh/advanced/context-eviction)。
 
-### 智能上下文驱逐
-从早期基于字符串长度的估算，演进到依托精确 token 累加器的 O(1) FIFO 算法：
+## 增加抽象前的判断原则
 
-```
-每条消息 → (Arc<Message>, 精确 token 数)
-total_tokens: 缓存累加和 → O(1) 查询
-驱逐策略: 纯 FIFO，不驱逐 System 消息
-```
+1. 优先尝试组合已有的 Engine、Pipeline、State 与 Tool。
+2. 只有真实需求无法由现有契约表达时，再考虑增加核心抽象。
+3. 可选能力不得在不知情的情况下改变现有 Pipeline 的默认行为。
+4. 对取消、生命周期与外部副作用应说明真实保证，不靠名称制造安全感。
 
-`User` 消息作为安全切割点——历史记录仅存储 `User`、`Assistant` 和 `Tool` 消息（System 完全解耦），在防 token 溢出的同时维持对话逻辑连贯。
+0.4.1 的 Leaf 正遵循这样的思路：Cargo Feature 和运行时配置**双重显式开启**；复用已有工具机制和 ReAct 循环；不额外引入 Agent Registry。其他 Pipeline 是否需要另一种 Leaf，由其作者决定。
 
-### 工具执行安全网
-- **非幂等工具绝不重试**（杜绝重复支付）
-- **幂等工具**按可配置次数重试
-- **客户端断连立即中止"幽灵工具"执行**——通过 `tokio::select!` 内建于框架
-- 框架层保证了**取消安全性（cancel safety）**
+## Ambi 不打算成为什么
 
-```rust
-// 来自 tool_handler.rs 的核心安全模式：
-tokio::select! {
-    res = run_future => { /* 工具完成 */ }
-    _ = async { tx_clone.closed().await } => {
-        // 客户端断连，中止幽灵工具
-    }
-}
-```
+Ambi 不以收集尽可能多的规划算法、角色体系、图工作流、持久调度器、权限系统或数据库为目标。小型 Runtime 可以让开发者实现这些东西，但**允许扩展**不等于**必须内置**。
 
-### 推理状态完整性
-本地引擎（`llama.cpp`）通过 `snapshot/restore` 机制，在任何解码失败或流中断后，都能将 KV Cache 和会话状态恢复到一致点，彻底消除隐蔽的状态污染。
-
-```rust
-// 来自 session.rs：
-pub fn snapshot(&self) -> (Vec<LlamaToken>, Vec<u8>, i32);
-pub fn restore(&mut self, snapshot: ...);
-```
-
-## 4. 一次编写，随处运行——原生与 WASM 统一心智模型
-
-Ambi 内置了跨平台的异步运行时抽象（`runtime.rs`），将 Tokio 原生的 `spawn_blocking` 等能力与 WASM 的 `wasm-bindgen-futures` 无感适配：
-
-| 函数 | 原生 (Tokio) | WASM |
-|------|-------------|------|
-| `spawn` | `tokio::spawn` | `wasm_bindgen_futures::spawn_local` |
-| `spawn_blocking` | `tokio::task::spawn_blocking` | 直接执行（单线程） |
-| `sleep` | `tokio::time::sleep` | `gloo_timers::future::sleep` |
-| `timeout` | `tokio::time::timeout` | Future 竞速 |
-| `Send + Sync` | 强制要求 | 放宽（空标记） |
-
-你在服务器上编写的 Agent 代码，几乎不用修改即可编译到浏览器里运行。硬件相关特性（`llama.cpp`）会被编译期安全剔除：
-
-```rust
-#[cfg(all(target_arch = "wasm32", feature = "llama-cpp"))]
-compile_error!("llama-cpp 特性在 wasm32 上不受支持");
-```
-
-同一套 API，同一组 trait，在云端、边缘和设备端之间无缝迁移。
-
----
-
-## 总结
-
-| 原则 | 核心思想 | 代码佐证 |
-|------|---------|---------|
-| 高自由 | 一切皆 trait | `LLMEngineTrait`, `Pipeline`, `ToolCallParser`, `StreamFormatter` |
-| 开发体验 | 五行使者 | `#[tool]` 宏，fluent `Agent::make().preamble().template()` |
-| 鲁棒性 | 生产级安全网 | FIFO 驱逐、幽灵取消、snapshot/restore、OOM 防护 |
-| 可移植性 | 原生 ↔ WASM | `runtime.rs` polyfill，编译期特性门控 |
+Ambi 想做的，是一个**稳定、清晰、可被组合的执行基础**，而不是最长的功能清单。

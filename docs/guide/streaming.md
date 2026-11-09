@@ -1,61 +1,44 @@
-# Streaming
+# Streaming and cancellation boundaries
 
-Chat streaming lets you display tokens as they are generated, rather than waiting for the full response.
+A pipeline decides what it emits. The built-in `ChatRunner` offers full-result `chat()` and incremental `chat_stream()` using the same underlying ReAct loop.
 
-## Basic usage
+## Consume a stream
 
 ```rust
 use futures::StreamExt;
 
-let mut stream = runner.chat_stream(&agent, &state, "Tell me a story").await?;
-
-while let Some(chunk) = stream.next().await {
-    match chunk {
-        Ok(text) => print!("{}", text),
-        Err(e) => eprintln!("Stream error: {}", e),
+let mut stream = runner.chat_stream(&agent, &state, "Explain the design").await?;
+while let Some(item) = stream.next().await {
+    match item {
+        Ok(text) => print!("{text}"),
+        Err(err) => eprintln!("stream error: {err}"),
     }
 }
 ```
 
-The stream yields `Result<String>` chunks. In a terminal you'd print each chunk; in a web server you'd send them as SSE or WebSocket frames.
+Add `futures = "0.3"` for `StreamExt`. The return value is a stream of `Result<String>` items; these are **text chunks**, not structured model/tool events. Applications can forward them through SSE or WebSocket.
 
-## WASM browser streaming
+## Model text vs. tool activity
 
-Ambi's streaming API works natively in the browser via the WASM target. The OpenAI provider
-uses the browser's native `fetch` and `ReadableStream` APIs – no special polyfills required.
-The same `chat_stream()` code runs both natively and in the browser.
+A ChatRunner stream may include text and tool-related display output, depending on the configured `StreamFormatter`. Use `agent.with_standard_formatting()` for standard cleanup or provide a custom formatter via `with_stream_formatter(...)`.
 
-See [`examples/webAssembly`](https://github.com/maskviva/ambi/tree/main/examples/webAssembly)
-for a live browser demo with a UI toggle.
+For machine-readable tool traces or audit events, do not assume the stream's display text is a stable protocol. See [Stream Formatter](/advanced/stream-formatter).
 
-## How streaming interacts with tools
+## Cancellation is best-effort across boundaries
 
-When the agent is in streaming mode and a tool call happens, the tool result blocks are also pushed into the stream as formatted strings. Your client sees something like:
+Dropping the receiver informs the runner that the client is no longer listening, allowing it to stop useful work. OpenAI streaming and local llama.cpp also have cancellation-aware paths. However, cancellation is not a universal transactional guarantee:
 
-```
-[Thinking]:
-The user asked about the weather...
-[Content]:
-Let me check.
-[TOOL_CALL]: get_weather({"city":"Tokyo"})
-```
+- A remote provider may already have received a request.
+- A tool future may be dropped while its external side effect continues.
+- A queued or ongoing local inference command has its own worker cancellation checkpoints.
 
-With `with_standard_formatting()`, these tool call labels are cleaned up automatically (see [Stream Formatter](/advanced/stream-formatter)).
+Design business actions accordingly. For a Leaf called from a streaming parent, Leaf's internal loop is synchronous and returns a **single final tool result**, not its inner token stream.
 
-## Client disconnect handling
+## Sync vs. stream
 
-If the client drops the connection (stream receiver is dropped), the framework detects this via the mpsc channel and:
-1. Stops consuming LLM tokens
-2. Cancels any pending tool executions ("ghost cancellation")
-3. Logs a warning and stops
+| API | Output | Typical use |
+| --- | --- | --- |
+| `runner.chat(...)` | `Result<String>` | Jobs, evaluations, simple applications |
+| `runner.chat_stream(...)` | Stream of `Result<String>` | Interactive response display |
 
-This prevents wasted inference and tool execution on abandoned requests.
-
-## Sync vs streaming
-
-| Mode | Call | Returns | Use case |
-|------|------|---------|----------|
-| Sync | `runner.chat()` | `Result<String>` | Simple requests, batch processing |
-| Stream | `runner.chat_stream()` | `ReceiverStream<Result<String>>` | Chat UIs, real-time displays |
-
-Both modes run the same ReAct loop internally. The difference is only in how the output is delivered.
+More: [Tools](/guide/tools) · [Leaf](/guide/leaf) · [Architecture](/advanced/architecture).

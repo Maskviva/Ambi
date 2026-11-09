@@ -1,107 +1,32 @@
-# Context Eviction
+# Context eviction: a budget, not a guarantee
 
-Long conversations eat up tokens. Ambi uses a deterministic FIFO eviction algorithm to keep the context within budget.
+Ambi keeps session history distinct from shared `Agent` configuration. `EvictionStrategy` supplies a `max_safe_tokens` threshold (default **8,000**) to limit retained chat history.
 
-## How it works
+## How the current algorithm works
 
-Each message in `ChatHistory` is stored alongside its exact token count:
-
-```rust
-struct ChatHistory {
-    messages: Vec<(Arc<Message>, usize)>,  // (message, token_count)
-    total_tokens: usize,
-}
-```
-
-When a new assistant message is pushed, the eviction check runs:
-
-```
-total_tokens + prompt_overhead > max_safe_tokens ?
-    → YES: pop oldest messages until under budget
-    → NO:  do nothing
-```
-
-The eviction is FIFO: oldest messages are removed first. This keeps recent conversation intact.
-
-```rust
-// Core algorithm from history.rs:
-pub fn evict_old_messages(&mut self, max_safe_tokens: usize, prompt_overhead: usize) -> Vec<Arc<Message>> {
-    let mut target = self.total_tokens + prompt_overhead;
-    let mut to_remove = 0;
-
-    for (_, tokens) in &self.messages {
-        target -= tokens;
-        to_remove += 1;
-        if target <= max_safe_tokens { break; }
-    }
-
-    self.messages.drain(0..to_remove)
-}
-```
-
-## What counts as "prompt overhead"
-
-The overhead includes:
-- System prompt tokens (from `AgentConfig`)
-- Dynamic context tokens (from `AgentState::dynamic_context`)
-- Tool instruction prompt tokens (cached in `Agent::cached_tool_prompt`)
-
-Note: `Message::System` is no longer pushed into `ChatHistory`. The history is a pure FIFO queue
-of `User`, `Assistant`, and `Tool` events, ensuring O(1) truncation and maximum KV Cache prefix matching.
-
-This is computed dynamically per iteration:
-
-```rust
-let prompt_overhead = engine.count_tokens(system_prompt)?
-    + engine.count_tokens(&state.dynamic_context)?
-    + engine.count_tokens(&agent.cached_tool_prompt)?;
-```
-
-## Configuring the threshold
+`ChatHistory` stores `(Arc<Message>, token_count)` entries and maintains a cached `total_tokens`. When history plus prompt overhead exceeds the configured threshold, it removes messages **from the front (FIFO)** until the threshold is met or there are no more messages.
 
 ```rust
 use ambi::config::EvictionStrategy;
 
-let agent = Agent::make(config).await?
+let agent = Agent::make(engine_config).await?
     .with_eviction_strategy(EvictionStrategy { max_safe_tokens: 4096 });
 ```
 
-### Choosing a value
+System Prompt and `AgentState.dynamic_context` are not normal history messages. Their overhead is assessed separately. `on_evict` callbacks can be used to record removed messages, but storage is an application concern, not guaranteed by the core.
 
-The default is 8000. For a model with 8K context, this leaves room for a ~4K output without hitting the limit. For a 128K model, 64000 might be reasonable. Monitor your average output length and adjust.
+## Real limitations
 
-## Eviction callback
+- The default tokenizer is an **approximate accounting mechanism**, not authoritative exact tokenization for every backend. Local llama.cpp exposes a separate exact token-counting path.
+- Eviction works at the **individual-message** level; it does not atomically preserve assistant/tool-call/result groups.
+- Context budgets do not inherently cover all multimodal and provider-specific token costs.
+- Large dynamic context or an oversize single input can still exceed a model's supported window.
+- Eviction is not the same as long-term memory. For pluggable memory providers, see [`ambi-memory`](/extensions/ambi-memory).
 
-You can register a hook that fires whenever messages are evicted. The callback now receives
-`&AgentState` as its first argument, allowing safe access to session identifiers and connection
-pools from state extensions for async database archiving:
+Treat `max_safe_tokens` as a tuning parameter, not as a proof that requests can never fail with a context-length error.
 
-```rust
-use ambi::{Agent, AgentState};
-use std::sync::Arc;
+## Leaf and eviction
 
-let agent = Agent::make(config).await?
-    .on_evict(|state: &AgentState, evicted: Vec<Arc<Message>>| {
-        let session_id = &state.session_id;
-        // NOTE: Runs while holding the AgentState write lock.
-        // Spawn an async task for I/O-heavy operations:
-        tokio::spawn(async move {
-            // persist evicted messages to DB
-        });
-    });
-```
+Each Leaf invocation has a fresh history and inherits the parent's eviction strategy. Its state is discarded at completion, and its internal eviction does **not** call the parent's persistence callback. Only its final answer is returned to the parent.
 
-Use cases:
-- **Persistence** – save old messages to a database for retrieval later
-- **Summarization** – condense evicted messages into summaries
-- **Logging/audit** – track what was dropped
-
-## When eviction happens
-
-Eviction runs at the end of each ReAct iteration, just after the assistant message is appended to history. If the iteration produces tool calls, those tool messages go into history next, and the next LLM call will trigger another eviction check if needed.
-
-## Safety limits
-
-- `max_iterations` (default 10) prevents infinite loops
-- If max iterations is reached, the history is rolled back to the snapshot taken before the request started
-- Non-idempotent tools are not retried, preventing duplicate side effects from eviction-related re-runs
+This is a deliberate context-lifecycle choice, not a replacement for durable storage. More: [Leaf](/guide/leaf) · [Architecture](/advanced/architecture).

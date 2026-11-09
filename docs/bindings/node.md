@@ -1,113 +1,55 @@
-# Node.js Binding
+# Node.js binding
 
-The Node.js binding lets you use Ambi from JavaScript/TypeScript with full access to OpenAI-compatible APIs, custom LLM engines, tool calling, and streaming.
+Ambi's Rust core has a separate Node.js binding. **The binding has its own package version and API surface**: the `bindings/node/package.json` in this repository declares `@maskviva/ambi-node` **0.2.1**, while the Rust core is 0.4.1.
 
-## Installation
+A binding exposes useful runtime capabilities; it is not necessarily feature-for-feature synchronized with every new core feature. In particular, the 0.4.1 Rust Leaf API is **not documented as a Node.js binding API** here.
 
-The binding is published as an npm package. It ships with pre-built native binaries for Windows x64, Linux x64, and Linux arm64.
+## Install
 
 ```bash
 npm install @maskviva/ambi-node
 ```
 
-> **Local development:** the package lives in `bindings/node/`. Build it with `npm run build` (requires Rust toolchain).
+Or build the native addon from `bindings/node/` using that package's build instructions. Native binaries and packaging constraints are platform-dependent.
 
-## Quick Start
+## Minimal example
 
-```javascript
-const {Agent, AgentState, Pipeline, LLMEngineConfig, JsChatTemplateType} = require('@maskviva/ambi-node')
+```js
+const { Agent, AgentState, Pipeline, LLMEngineConfig } = require('@maskviva/ambi-node');
 
-// 1. Configure the engine
-const config = LLMEngineConfig.openai({
+async function main() {
+  const cfg = LLMEngineConfig.openai({
     apiKey: process.env.OPENAI_API_KEY,
     baseUrl: 'https://api.openai.com/v1',
     modelName: 'gpt-4o-mini',
     temp: 0.7,
     topP: 0.9,
-})
+  });
 
-// 2. Create the agent
-const agent = (await Agent.make(config))
-    .template(JsChatTemplateType.Chatml)
-    .preamble('You are a helpful assistant.')
-
-// 3. Chat
-const state = new AgentState('session-1')
-const runner = Pipeline.chatRunner(5)
-const reply = await runner.chat(agent, state, 'Hello!')
-```
-
-## API Reference
-
-| JS API | Rust Equivalent | Description |
-|--------|----------------|-------------|
-| `Agent.make(config)` | `Agent::make()` | Create an agent (async) |
-| `agent.preamble(text)` | `agent.preamble()` | Set system prompt |
-| `agent.template(type)` | `agent.template()` | Chat template type |
-| `agent.customTemplate(obj)` | `agent.template(ChatTemplate)` | Custom template |
-| `agent.tool(tool(...))` | `agent.tool()` | Register a tool |
-| `agent.withStandardFormatting()` | `agent.with_standard_formatting()` | Enable standard formatting |
-| `agent.withEvictionStrategy(...)` | `agent.with_eviction_strategy()` | Memory eviction |
-| `agent.maxIterations(n)` | `agent.max_iterations()` | Max tool iterations |
-| `agent.withToolTags(s, e)` | `agent.with_tool_tags()` | Custom tool tags |
-| `agent.countTokens(text)` | `engine.count_tokens()` | Token counting |
-| `agent.onEvict(cb)` | `agent.on_evict()` | Eviction callback |
-| `AgentState(id)` | `AgentState::new()` | Session state |
-| `LLMEngineConfig.openai(opts)` | `LLMEngineConfig::OpenAI()` | OpenAI engine |
-| `LLMEngineConfig.custom(handler)` | `LLMEngineConfig::Custom()` | Custom JS engine |
-| `Pipeline.chatRunner(n)` | `ChatRunner::new()` | Chat runner |
-| `Pipeline.custom(handler)` | — | Custom JS pipeline |
-| `runner.chat(...)` | `runner.chat()` | Sync chat |
-| `runner.chatStream(...)` | `runner.chat_stream()` | Streaming chat |
-| `stream.nextChunk()` | — | Read next token |
-
-## Tool Registration
-
-Tools can be registered using the lightweight `tool()` helper:
-
-```javascript
-const {tool} = require('@maskviva/ambi-node')
-
-agent.tool(tool({
-    name: 'get_weather',
-    description: 'Query real-time weather for a city',
-    parameters: {
-        city: {type: 'string', description: 'City name'},
-        unit: {type: 'string', enum: ['celsius', 'fahrenheit']},
-    },
-    callback: (args) => ({
-        temperature: 25,
-        condition: 'Sunny',
-    }),
-}))
-```
-
-## Custom LLM Engine
-
-Create a custom engine from any JS function. The handler must be **synchronous** — start async work inside and call `resolveRequest()` when done:
-
-```javascript
-const {LLMEngineConfig, resolveRequest} = require('@maskviva/ambi-node')
-
-const config = LLMEngineConfig.custom(
-    (err, argsJson) => {
-        const {request_id, request} = JSON.parse(argsJson)
-        // Start async work
-        (async () => {
-            const result = await myAsyncLLMCall(request.formatted_prompt)
-            resolveRequest(request_id, result)
-        })()
-    },
-    false,  // supportsMultimodal
-    null,   // streamHandler (optional)
-)
-```
-
-## Streaming
-
-```javascript
-const stream = await runner.chatStream(agent, state, 'Tell me a story')
-for (let chunk = await stream.nextChunk(); chunk !== null; chunk = await stream.nextChunk()) {
-    process.stdout.write(chunk)
+  const agent = (await Agent.make(cfg)).preamble('You are a concise assistant.');
+  const state = new AgentState('node-session-1');
+  const runner = Pipeline.chatRunner(5);
+  console.log(await runner.chat(agent, state, 'Hello, Ambi!'));
 }
+
+main().catch(console.error);
 ```
+
+## Common binding APIs
+
+| JS | Meaning |
+| --- | --- |
+| `LLMEngineConfig.openai(opts)` | OpenAI-compatible backend configuration |
+| `Agent.make(config)` | Initialize a shared agent |
+| `agent.preamble(text)` | System prompt |
+| `agent.tool(...)` | Register a JS-defined tool |
+| `AgentState(id)` | Session state |
+| `Pipeline.chatRunner(n)` | Built-in chat strategy |
+| `Pipeline.custom(...)` | JS-provided execution strategy |
+| `runner.chat(...)`, `runner.chatStream(...)` | Full or streaming response |
+
+For tool helpers, custom engines and streaming examples, prefer the versioned source in [`bindings/node/examples`](https://github.com/Maskviva/Ambi/tree/main/bindings/node/examples) and the generated `lib/index.d.ts` matching your installed package.
+
+## Cross-language design boundary
+
+The tree / branch / leaf metaphor describes **Rust core architecture**; it does not mean `Pipeline.chatRunner` on Node automatically exposes Rust's `with_leaf()`. Check bindings separately when adopting new native features. See [Design philosophy](/advanced/design-philosophy) and [Leaf](/guide/leaf).

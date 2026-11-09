@@ -1,88 +1,45 @@
-# 工具解析器
+# 工具解析器：模型语法与工具执行解耦
 
-工具解析器从 LLM 的原始文本输出中提取结构化的工具调用。这就是 Ambi 连接自然语言生成和函数执行的方式。
+模型可以产生文本或 Provider 特定的工具调用。Ambi 的 `ToolCallParser` 把文本形式转换为 `(tool_name, serde_json::Value)` 参数，再由工具注册表查找 Rust 实现。**解析器不等于权限控制。**
 
-## 默认：TagToolParser
+## 默认标签协议
 
-内置解析器查找 `[TOOL_CALL]` 和 `[/TOOL_CALL]` 标签：
-
-```
-[TOOL_CALL]{"name":"get_weather","args":{"city":"东京"}}[/TOOL_CALL]
+```text
+[TOOL_CALL]{"name":"get_weather","args":{"city":"Tokyo"}}[/TOOL_CALL]
 ```
 
-它支持：
-- **单个对象**和**对象数组**
-- **Markdown 代码块包裹**（` ```json ... ``` `）
-- **截断 JSON 恢复** —— 模型达到 max_tokens 导致 JSON 被截断时，解析器找到最后一个 `}` 丢弃后面的垃圾
-- **格式错误的 JSON** —— 如果完全解析失败，产生 `__format_error__` 调用，触发下一轮纠错提示
+`TagToolParser` 支持单对象、数组和常见 Markdown 代码块；JSON 解析失败时可能产生特殊的 `__format_error__`，让模型尝试修正。截断恢复是**尽力而为**，不能保证所有错误 JSON 都能恢复。OpenAI 兼容端点的原生工具调用由 Provider 适配层转成内部格式。
 
-```rust
-// 来自代码：
-pub(crate) fn extract_and_push_call(json_str: &str, calls: &mut Vec<(String, Value)>) {
-    // 1. 尝试完整解析
-    // 2. 失败则找最后一个 '}' 尝试截断解析
-    // 3. 都失败则推入 __format_error__
-}
-```
-
-## 自定义解析器
-
-实现 `ToolCallParser`：
+## 实现接口
 
 ```rust
 use ambi::types::ToolCallParser;
+use serde_json::Value;
 
-struct JsonModeParser;
+struct MyParser;
 
-impl ToolCallParser for JsonModeParser {
+impl ToolCallParser for MyParser {
     fn get_tags(&self) -> (String, String) {
         ("<tool>".into(), "</tool>".into())
     }
 
     fn format_instruction(&self, tools_json: &str) -> String {
-        format!(
-            "可用函数：\n{}\n\n调用格式：\n<tool>{{\"name\":\"函数名\",\"args\":{{...}}}}</tool>",
-            tools_json
-        )
+        format!("Available tools: {tools_json}. Use <tool>JSON</tool>.")
     }
 
-    fn parse(&self, text: &str) -> Vec<(String, serde_json::Value)> {
-        // 你的解析逻辑
-        todo!()
+    fn parse(&self, text: &str) -> Vec<(String, Value)> {
+        // 用自定义逻辑解析模型文本。
+        let _ = text;
+        vec![]
     }
 }
+
+let agent = Agent::make(engine_config).await?
+    .with_tool_parser(MyParser);
 ```
 
-### 每个方法的作用
+`format_instruction` 构建工具提示词，`get_tags` 告诉格式化器标签范围，`parse` 提取实际调用。
 
-| 方法 | 用途 |
-|------|------|
-| `get_tags()` | 返回开始/结束标签——`StandardStreamFormatter` 用它来隐藏流中的原始标签 |
-| `format_instruction()` | 生成告诉 LLM 如何格式化工具调用的系统提示 |
-| `parse()` | 扫描 LLM 输出文本，提取工具名和参数 |
+如果自定义协议采用特殊标签，通常还要搭配 [StreamFormatter](/zh/advanced/stream-formatter)。注意 0.4.1 的 `ToolCallParser` Trait **只有** `get_tags`、`format_instruction`、`parse`，**没有** `create_stream_formatter` 方法。
 
-### format_instruction 是缓存的
-
-指令字符串在注册工具时（`tool()` builder 调用）计算一次并缓存。不会每次请求重新生成。如果你的解析器指令依赖运行时状态，需要另做处理。
-
-## 使用自定义解析器
-
-```rust
-let agent = Agent::make(config).await?
-    .with_tool_parser(JsonModeParser);
-```
-
-## 与流式格式化器的配合
-
-解析器可以提供自己的流式格式化器。默认解析器不覆盖这个，但如果你的自定义格式需要特定的流式清理，可以覆盖 `create_stream_formatter()`：
-
-```rust
-impl ToolCallParser for MyParser {
-    fn create_stream_formatter(&self) -> Box<dyn StreamFormatter> {
-        Box::new(PassThroughFormatter)
-    }
-    // ...
-}
-```
-
-这在 `with_standard_formatting()` 创建格式化器工厂时会被调用。
+工具执行与副作用策略参见 [工具](/zh/guide/tools)。

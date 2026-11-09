@@ -1,161 +1,84 @@
-# 架构概览
+# 架构：能力、状态与执行分离
 
-这篇文章讲 Ambi 内部是怎么工作的。用框架不一定要全懂，但想扩展的时候会很有帮助。
+Ambi 的核心刻意保持小型。它不是工作流图引擎，也不需要多智能体注册中心。核心只有三个需要分清的角色：可复用的 **Agent**、由调用方持有的 **AgentState**、可替换的 **Pipeline**。
 
-## Agent 和 AgentState 是分开的
+建议先读 [设计理念](/zh/advanced/design-philosophy)，再阅读这个架构说明；[Leaf](/zh/guide/leaf) 则展示其中一种可选能力。
 
-这是最重要的设计决策。`Agent` 是只读蓝图。`AgentState` 是可变的对话记忆。
+## 三个基本边界
 
-```
-Agent（只读，所有字段 pub(crate) / Arc 包装 → 零成本克隆）
-├── llm_engine (Arc<LLMEngine>)  → 模型后端 (pub(crate))
-├── config (Arc<AgentConfig>)    → 系统提示词、模板、驱逐策略
-├── tools_def / tool_map         → 注册的工具和定义
-├── tool_parser                  → 从 LLM 输出中解析工具调用的方式
-├── cached_tool_prompt           → 预渲染的工具指令字符串
-├── formatter_factory            → 流式输出清理方式
-└── on_evict_handler             → 消息被驱逐时的回调（接收 &AgentState）
-
-AgentState（可变，RwLock）
-├── session_id             → 唯一会话标识（KV Cache 槽位分配、分布式追踪）
-├── dynamic_context        → 易变会话数据（RAG 结果、环境变量）
-├── chat_history           → 纯 FIFO 队列（仅 User / Assistant / Tool）
-└── extensions             → anymap2 用于自定义状态
-```
-
-注意：Agent 的字段都是 `pub(crate)` 的——外部代码通过公开 API（`chat()`、`chat_stream()` 等）与 Agent 交互，
-而不是直接访问内部字段。
-
-这样设计的好处：
-
-- **一个 Agent 蓝图，多组对话** —— clone 只是 Arc 引用计数 +1
-- **Agent 构建只做一次** —— 包括阻塞式的引擎加载
-- **State 可以序列化** —— 对话可以持久化和恢复
-- **最大化 KV Cache 命中率** —— 系统提示词（静态）永远不会从头部被驱逐
-
-## ReAct 循环
-
-调用 `runner.chat()` 或 `runner.chat_stream()` 时，内部流程：
-
-```
-用户输入
-    │
-    ▼
-1. 把用户消息推进 ChatHistory
-2. 构建 LLMRequest
-   ├─ system_prompt + dynamic_context
-   ├─ cached_tool_prompt
-   ├─ 过滤后的历史（仅 User/Assistant/Tool）
-   ├─ 渲染好的 prompt 字符串
-   └─ 提取的图片
-    │
-    ▼
-3. LLMEngine.chat() / chat_stream()
-   └─ 返回原始文本
-    │
-    ▼
-4. ToolCallParser.parse(output)
-   └─ 从文本中提取工具调用
-    │
-    ├─ 没有工具 → 返回文本
-    │
-    └─ 有工具 →
-       5. 并行执行（.buffered(max_concurrency)），每个工具有超时
-       6. 工具结果作为 Tool 消息推回 ChatHistory
-       7. 驱逐检查（纯 FIFO，无 System 消息），回调 on_evict(state, msgs)
-       8. 回到步骤 3（最多 max_iterations 次）
+```text
+                         Agent
+                  Engine / 配置 / 工具
+                    解析器 / 格式化器
+                           │
+                ┌──────────┴──────────┐
+                │                     │
+         ChatRunner: Pipeline       自定义 Pipeline
+          （ReAct 工具循环）        （自定义执行策略）
+                │                     │
+                └──────────┬──────────┘
+                           │
+                        AgentState
+                session_id / chat_history
+                dynamic_context / extensions
 ```
 
-步骤 3-8 重复，直到没有工具调用、或者达到 `max_iterations`。
+`Agent` 内部通过 `Arc` 共享主要资源，克隆成本较低。`AgentState` 支持 `serde` 序列化，不过类型擦除的扩展映射不会被序列化。`AgentState::new_shared()` 返回 `Arc<RwLock<AgentState>>`。通常应当**每个会话创建自己的 State**。
 
-### ChatRunner 并发控制
+同一个 Agent 可以服务不同会话，但 **`RwLock` 不等于整个 Run 的事务锁**：执行过程会分多次获取和释放锁。如果把同一个 State 交给并发请求，应用层需要自行保证对话顺序。
 
-`ChatRunner` 持有 `maximum_concurrency` 字段（默认 5，通过 `ChatRunner::default()` 创建），
-可以对并行工具执行进行灵活的速率限制：
+## ChatRunner 的一次请求
 
-```rust
-use ambi::ChatRunner;
+1. 校验输入，例如多模态支持和并发参数。
+2. 解析工具集合；启用 Leaf 时，为父级的本次执行增广工具快照。
+3. 将用户消息写入 `AgentState.chat_history`。
+4. 根据 System Prompt、动态上下文、工具定义、历史、模板与图片构建 `LLMRequest`（含 `session_id`）。
+5. 调用 Engine，解析模型输出中的工具请求。
+6. 按当前循环的并发上限执行工具，并应用每个工具的超时和重试策略。
+7. 将工具结果反馈给模型，直到产生最终结果或触发迭代上限。
+8. 统计历史 Token，并根据预算驱逐较早的消息。
 
-// 默认：最多 5 个并发工具执行
-let runner = ChatRunner::default();
+`chat()` 返回 `Result<String>`，`chat_stream()` 返回 `Result<String>` 的流。二者复用核心 ReAct 循环，但输出传递方式不同。
 
-// 自定义限制
-let runner = ChatRunner::new(3);
-```
+## Engine 边界
 
-## 模板渲染
+`LLMEngineTrait` 提供 `chat(LLMRequest) -> Result<String>`、`chat_stream(...)`、`reset_context()`、`supports_multimodal()` 等接口。它目前以字符串为主要输出，**尚不是完整的结构化模型事件协议**。
 
-`ChatTemplate` 定义了消息序列化为 prompt 字符串的方式。每个变体存储不同角色（system/user/assistant/tool）的前后缀标签。
+- **OpenAI 兼容 API**：HTTP 请求并发信号量、请求超时；图片能力按已知模型名前缀推断或手动指定。
+- **llama.cpp**：仅原生目标平台；使用有界命令队列、推理取消检查和共享 KV Cache。`session_id` 防止错误复用跨会话缓存；交替会话可能重新 Prefill。
+- **自定义后端**：通过 `LLMEngineConfig::Custom(Box<dyn LLMEngineTrait>)` 接入。
 
-```
-举例：ChatML 格式
-<|im_start|>system
-你是一个助手。
-<|im_end|>
-<|im_start|>user
-你好
-<|im_end|>
-<|im_start|>assistant
-你好呀
-<|im_end|>
-<|im_start|>assistant   ← 从这里开始生成
-```
+自定义 Pipeline 可通过公开的 `Agent::llm_engine()` 取得 `Arc<LLMEngine>`，无需访问私有字段。
 
-引擎收到渲染好的 prompt 字符串。OpenAI 引擎额外收到结构化的 `LLMRequest`（system/history/tools 分开）。
+## Leaf 复用机制，而不是身份
 
-## Pipeline trait
+可选 Leaf 基于 `ChatRunner` 与 `Tool` 机制实现。父级看到原始工具加 `spawn_leaf`；Leaf 看到的原始工具快照中**没有** `spawn_leaf`。Leaf 以新 `AgentState` 运行 `run_loop`，采用 `final_answer_only = true`。
 
-`Pipeline` 是定义执行契约的 trait。`ChatRunner` 是内置实现，你可以写自己的：
+它不是另一个长期存在的 Agent；不会继承父级对话历史，但**共享 Engine 和父级工具**。参见 [Leaf 任务委派](/zh/guide/leaf)。
 
-```rust
-// 原生平台 (Send + Sync)
-pub trait Pipeline: Send + Sync {
-    fn execute(
-        &self, agent: &Agent, state: &Arc<RwLock<AgentState>>, input: Vec<ContentPart>
-    ) -> impl Future<Output = Result<String>> + Send;
+## Runtime 做到了什么、没有承诺什么
 
-    fn execute_stream(
-        &self, agent: &Agent, state: &Arc<RwLock<AgentState>>, input: Vec<ContentPart>
-    ) -> impl Future<Output = Result<Pin<Box<ReceiverStream<Result<String>>>>>> + Send;
-}
+| 主题 | 当前机制 | 边界 |
+| --- | --- | --- |
+| 会话状态 | Agent 与 Session State 分离 | 不自动保证同一 State 的 Run 串行化 |
+| 历史驱逐 | 基于近似 Token 统计的 FIFO 消息裁剪 | 不保证工具调用组原子裁剪或绝对不超窗 |
+| 工具重试 | 仅标记幂等的工具允许超时重试 | 取消 Future 不等于撤销外部副作用 |
+| Leaf | 临时状态，只返回最终答案 | 共享引擎与原始工具权限 |
+| Pipeline | 开发者可实现 Trait | 未内置任意 DAG 组合 |
+| 流式执行 | 通道驱动，支持取消敏感处理 | 外部请求仍有独立的取消语义 |
 
-// WASM (无 Send + Sync 约束)
-#[cfg(target_arch = "wasm32")]
-pub trait Pipeline {
-    // 方法签名相同，但不含 Send + Sync
-}
-```
+如果应用需要审计级工具事件、持久任务队列、严格权限隔离，应在这些基本机制之上显式构建。
 
-两种模式：
-- **同步** —— 等全部回复准备好再返回（内部跑同样的 ReAct 循环）
-- **流式** —— 返回一个 `ReceiverStream`，调用方逐条迭代
+## 源码索引
 
-## 可扩展点（全部基于 trait）
+| 主题 | 源码路径 |
+| --- | --- |
+| Agent / State | `src/agent/core.rs`、`core/builder.rs` |
+| Pipeline / ChatRunner | `src/agent/pipeline.rs`、`pipeline/chat_runner.rs` |
+| ReAct 循环 | `src/agent/pipeline/chat_runner/multimodal_handler.rs` |
+| Leaf | `src/agent/pipeline/chat_runner/leaf.rs` |
+| 工具 | `src/types/tool_def.rs`、`src/agent/tool/manager.rs` |
+| Engine | `src/llm/engine.rs`、`src/llm/providers/` |
+| 历史 | `src/agent/core/history.rs` |
 
-| 可以替换什么 | Trait | 默认 |
-|-------------|-------|------|
-| LLM 后端 | `LLMEngineTrait` | OpenAI / llama.cpp |
-| 工具实现 | `Tool` | 用户提供 |
-| 工具调用解析 | `ToolCallParser` | 基于 `[TOOL_CALL]` 标签 |
-| 流式格式化 | `StreamFormatter` | 透传 |
-| 执行管道 | `Pipeline` | `ChatRunner` |
-| 分词器 | `TokenizerTrait` | `cl100k_base` (tiktoken) |
-
-## 跨平台运行时
-
-`runtime` 模块抽象了平台差异：
-
-| 函数 | 原生 (tokio) | WASM |
-|------|-------------|------|
-| `spawn` | `tokio::spawn` | `wasm_bindgen_futures::spawn_local` |
-| `spawn_blocking` | `tokio::task::spawn_blocking` | 直接执行（单线程） |
-| `sleep` | `tokio::time::sleep` | `gloo_timers::future::sleep` |
-| `timeout` | `tokio::time::timeout` | Future 竞速 |
-| `SendSync` | `Send + Sync` | 空 trait（无操作） |
-
-WASM 下编译时会阻止 `llama-cpp` 特性：
-
-```rust
-#[cfg(all(target_arch = "wasm32", feature = "llama-cpp"))]
-compile_error!("llama-cpp not supported on wasm32");
-```
+继续阅读：[自定义 Pipeline](/zh/advanced/custom-pipeline) · [自定义 Engine](/zh/advanced/custom-engine) · [上下文驱逐](/zh/advanced/context-eviction)。

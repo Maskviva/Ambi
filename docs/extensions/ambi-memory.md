@@ -1,83 +1,45 @@
-# ambi-memory
+# ambi-memory: storage policy is an extension
 
-Pluggable three-dimensional memory extension for the Ambi AI agent framework.
+`ambi-memory` is intentionally separate from Ambi's core. The runtime manages conversation state and FIFO eviction; **your application chooses whether and where to store lasting knowledge**.
+
+The companion crate's source version is `0.1.1` in the Ambi 0.4.1 repository.
 
 ```toml
 [dependencies]
-ambi-memory = "0.1"
+ambi = "0.4.1"
+ambi-memory = "0.1.1"
 ```
 
-## Three memory dimensions
+If registry versions are not available or not aligned, use matching workspace `path` dependencies.
 
-### KV Memory — exact state storage
+## Three kinds of memory contracts
 
-Store and retrieve arbitrary key-value pairs per session. Ideal for reflexion diaries, user settings, state machine flags, or any structured data that needs exact lookup.
+| Contract | Purpose | Built-in implementation |
+| --- | --- | --- |
+| `KvMemoryProvider` | Exact session-scoped key-value entries | `InMemoryKvProvider` |
+| `SummaryMemoryProvider` | Store and retrieve summaries of prior context | `InMemorySummaryProvider` |
+| `SemanticMemoryProvider` | Store/search semantic memories | **Trait only**; supply a provider |
+
+The `InMemory*` implementations are process-local; they do not give database durability. The crate does **not** ship a ready-made vector database or embedding backend.
+
+## Key-value example
 
 ```rust
+use ambi::AgentState;
 use ambi_memory::{AgentStateMemoryExt, InMemoryKvProvider};
 
-let kv = InMemoryKvProvider::new();
+let provider = InMemoryKvProvider::new();
 let mut state = AgentState::new("session-1");
-
-state.remember_kv(&kv, "user_name", "Alice").await?;
-state.recall_kv_into_context(&kv).await?;
-// dynamic_context now contains: "[STATE MEMORY]:\n- user_name: Alice\n"
+state.remember_kv(&provider, "project", "Ambi").await?;
+state.recall_kv_into_context(&provider).await?;
 ```
 
-### Semantic Memory — vector-based recall
+Recalling into dynamic context is explicit. The caller is responsible for clearing or refreshing stale context; the memory extension does not silently own the `Agent` lifetime.
 
-Store and search past conversation chunks by semantic similarity. Useful for long-term memory across multi-session interactions. Implement the trait against your preferred vector database (Milvus, Qdrant, Pinecone, etc.).
+## Summaries and eviction
 
-```rust
-use ambi_memory::SemanticMemoryProvider;
+An application can use `on_evict` to observe removed messages and store summaries through its own provider and scheduling logic. This must be integrated deliberately: the core's eviction callback is not a durable background job system.
 
-async fn remember(provider: &dyn SemanticMemoryProvider, state: &mut AgentState) {
-    state.archive_semantic(provider, "User mentioned they prefer Python.").await?;
-    state.recall_semantic_into_context(provider, "What language does the user like?", 3).await?;
-}
-```
+Leaf's temporary state does not use the parent's eviction persistence callback. A Leaf therefore does **not** automatically add its full history to long-term memory; only its returned result is visible to the parent.
 
-### Summary Memory — anti-amnesia on eviction
-
-When the FIFO context eviction algorithm drops old messages, this provider automatically compresses them into a rolling summary using the LLM itself.
-
-```rust
-use ambi_memory::{AgentStateMemoryExt, InMemorySummaryProvider};
-
-let summary_provider = InMemorySummaryProvider::new();
-
-// Before each turn, inject the accumulated summary:
-state.inject_summary_context(&summary_provider).await?;
-
-// Inside an on_evict callback, compress what was dropped:
-state.summarize_evicted_messages(&agent, &summary_provider, &evicted).await?;
-```
-
-## Extension trait
-
-All three memory dimensions are exposed through a single `AgentStateMemoryExt` trait, which is implemented on `AgentState`:
-
-| Method | Dimension | Effect |
-|--------|-----------|--------|
-| `remember_kv(provider, key, value)` | KV | Stores a value |
-| `recall_kv_into_context(provider)` | KV | Injects all KV pairs into `dynamic_context` |
-| `archive_semantic(provider, text)` | Semantic | Embeds and persists text |
-| `recall_semantic_into_context(provider, query, limit)` | Semantic | Injects top-N similar memories into `dynamic_context` |
-| `inject_summary_context(provider)` | Summary | Prepends the rolling summary to `dynamic_context` |
-| `summarize_evicted_messages(agent, provider, evicted)` | Summary | Compresses dropped messages via the LLM |
-
-## Backend implementations
-
-The crate ships **in-memory** implementations (`InMemoryKvProvider`, `InMemorySummaryProvider`) for testing and single-node deployments. For production, implement the corresponding trait against your database:
-
-```rust
-struct MyKvProvider { /* connection pool */ }
-
-#[async_trait]
-impl KvMemoryProvider for MyKvProvider {
-    async fn store(&self, session_id: &str, key: &str, value: &str) -> Result<()> { /* ... */ }
-    async fn retrieve(&self, session_id: &str, key: &str) -> Result<Option<String>> { /* ... */ }
-    async fn retrieve_all(&self, session_id: &str) -> Result<HashMap<String, String>> { /* ... */ }
-    async fn clear_session(&self, session_id: &str) -> Result<()> { /* ... */ }
-}
-```
+See [Context eviction](/advanced/context-eviction) · [Leaf](/guide/leaf).

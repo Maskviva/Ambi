@@ -1,138 +1,78 @@
-# Tools
+# Tools: compose capabilities, control effects
 
-A tool is a Rust function that the LLM can decide to call. You expose your business logic as tools, and Ambi handles the wiring: JSON schema generation, argument parsing, timeout, retry, and parallel execution.
+Tools are the boundary between model-generated intent and application operations. Ambi exposes typed Rust `Tool` implementations with JSON Schema descriptions, argument decoding, timeout policy, and per-loop concurrent execution.
 
-## Defining a tool
-
-Implement the `Tool` trait:
+## Define a typed tool
 
 ```rust
-use ambi::{Tool, ToolDefinition, ToolErr};
-use serde::{Deserialize, Serialize};
+use ambi::types::{Tool, ToolDefinition, ToolErr};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
-struct WeatherArgs {
-    city: String,
-}
+struct CalcArgs { a: f64, b: f64 }
 
 #[derive(Serialize)]
-struct WeatherResult {
-    temperature: f64,
-    condition: String,
-}
+struct CalcResult { result: f64 }
 
-struct WeatherTool;
+struct Add;
 
 #[async_trait]
-impl Tool for WeatherTool {
-    const NAME: &'static str = "get_weather";
-
-    type Args = WeatherArgs;
-    type Output = WeatherResult;
+impl Tool for Add {
+    const NAME: &'static str = "add";
+    type Args = CalcArgs;
+    type Output = CalcResult;
 
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
-            name: "get_weather".into(),
-            description: "Get the current weather for a city.".into(),
+            name: Self::NAME.into(),
+            description: "Add two numbers".into(),
             parameters: serde_json::json!({
                 "type": "object",
-                "properties": {
-                    "city": { "type": "string", "description": "City name" }
-                },
-                "required": ["city"]
+                "properties": { "a": { "type": "number" }, "b": { "type": "number" } },
+                "required": ["a", "b"]
             }),
             timeout_secs: Some(10),
-            max_retries: Some(2),
+            max_retries: Some(1),
             is_idempotent: true,
         }
     }
 
-    async fn call(&self, args: WeatherArgs) -> Result<WeatherResult, ToolErr> {
-        // Your actual implementation: call an API, query a DB, etc.
-        Ok(WeatherResult {
-            temperature: 22.5,
-            condition: "Sunny".into(),
-        })
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, ToolErr> {
+        Ok(CalcResult { result: args.a + args.b })
     }
 }
 ```
 
-## Registering a tool
+Add `async-trait`, `serde` (derive enabled) and `serde_json` alongside `ambi` for this example. Register with `.tool(Add)?`; duplicate tool names fail during registration.
+
+## Timeout and retries are explicit *policies*
+
+`ToolManager` enforces a timeout (15 seconds if unspecified). A timed-out tool may be retried only if `is_idempotent` is `true`, using `max_retries` (3 if unspecified for idempotent tools). A tool returning a business error is not retried. A non-idempotent tool is never automatically retried.
+
+| Example | `is_idempotent` | Why |
+| --- | --- | --- |
+| Pure arithmetic or read-only lookup | `true` | Repeat is generally safe |
+| Sending an email, payment, external write | `false` | Retry may duplicate an effect |
+
+**Important:** an async timeout cancels the awaited Rust future; it cannot certify that a request already received by an external service was undone. For consequential actions, use domain-level idempotency keys, durable status records, or confirmation controls.
+
+## ReAct and parallel calls
+
+The built-in `ChatRunner` parses model tool calls using the registered parser and invokes tools. Multiple calls in one model response can run concurrently up to `ChatRunner::new(n)`'s limit (default `5`). This is a **per-loop** limit, not a process-wide budget. After tool results are appended, the model can run another iteration.
 
 ```rust
-let agent = Agent::make(config).await?
-    .preamble("You are a weather assistant.")
-    .tool(WeatherTool)?;   // <-- returns Err if name conflicts
-```
-
-Now when the user asks "What's the weather in Tokyo?", the LLM may invoke `get_weather`. The framework catches the tool call, parses the arguments, runs your function, and feeds the result back into the conversation.
-
-### Tool name uniqueness
-
-Tool names must be unique. If you register two tools with the same name, `tool()` returns `AmbiError::AgentError` immediately (fail-fast).
-
-## Using the `#[tool]` macro
-
-If you add the `ambi-macros` crate, you can reduce boilerplate by annotating functions directly — no manual trait impl needed.
-
-```bash
-cargo add ambi-macros
-```
-
-See [ambi-macros](/extensions/ambi-macros) for full documentation on the `#[tool]` and `#[agent]` macros, including parameter descriptions, type inference, and generated code examples.
-
-## Per-tool configuration
-
-Every `ToolDefinition` has three important fields:
-
-| Field | Default | Meaning |
-|-------|---------|---------|
-| `timeout_secs` | `Some(15)` | Max wall-clock time before the tool is aborted |
-| `max_retries` | `Some(3)` | Number of retries on timeout (only applies if idempotent) |
-| `is_idempotent` | `false` | Whether it's safe to retry – read operations = yes, writes/emails = no |
-
-### Why `is_idempotent` matters
-
-Non-idempotent tools are **never retried**. If a "send email" tool times out after 10 seconds, the framework will not run it again – you don't want duplicate emails. Read-only tools like "search database" can retry safely.
-
-## What happens when a tool is called
-
-1. LLM outputs `[TOOL_CALL]{"name":"get_weather","args":{"city":"Tokyo"}}[/TOOL_CALL]`
-2. The parser extracts the tool name and JSON args
-3. `ToolManager::run_tool` looks up the tool, applies timeout, runs it
-4. If it times out and is idempotent, it retries (up to `max_retries` times)
-5. The result is pushed into `ChatHistory` as a `Tool` message
-6. The LLM gets another turn to produce a final answer (ReAct loop)
-
-## Parallel execution
-
-All tool calls from a single LLM response run concurrently. The maximum concurrency is configured
-on `ChatRunner` (defaults to 5 via `ChatRunner::default()`):
-
-```rust
-use ambi::ChatRunner;
-
-// Default concurrency (5)
-let runner = ChatRunner::default();
-
-// Custom concurrency limit
+let agent = Agent::make(engine_config).await?
+    .tool(Add)?;
 let runner = ChatRunner::new(3);
 ```
 
-```rust
-// pseudocode from tool_handler.rs
-stream::iter(calls)
-    .map(|(name, args, id)| run_tool(name, args, id))
-    .buffered(runner.maximum_concurrency)
-```
+## Tool syntax and parsing
 
-If the LLM calls three tools, they execute in parallel. If one of them is slow, the others are not blocked.
+The default parser uses special tags around JSON tool-call data, while OpenAI-compatible model responses are translated into Ambi's internal tool-call representation. You can replace the `ToolCallParser` or configure tags; see [Tool Parser](/advanced/tool-parser).
 
-## Ghost call cancellation
+## Tools inside Leaf
 
-When streaming, if the client disconnects mid-tool-execution, Ambi immediately discards any pending tool futures. This prevents orphaned background operations.
+The built-in Leaf delegates by exposing `spawn_leaf` as another tool. However, it inherits the parent's **original** tools, including writing or network side effects. It does not provide an allow-list or permission sandbox. The Leaf's snapshot deliberately omits its own `spawn_leaf` tool, preventing recursion through that interface.
 
-## Error recovery for malformed JSON
-
-If the LLM produces invalid JSON (trailing comma, unclosed brace), the parser emits a special `__format_error__` call. The framework injects a correction prompt into the next LLM turn, asking it to fix the format. This avoids crashes and gives the model a chance to self-correct.
+See [Leaf](/guide/leaf) for the trade-off and [Design philosophy](/advanced/design-philosophy) for why delegation is a tool instead of another permanent Agent entity.

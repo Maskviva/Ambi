@@ -1,123 +1,41 @@
-# ambi-macros
+# ambi-macros：减少样板代码，不改变 Runtime
 
-`ambi-macros` 是 Ambi 的过程宏子库，用于消除定义工具和 Agent 时的样板代码。
+`ambi-macros` 是独立的过程宏 Crate。生成的代码仍实现 Ambi 普通的 Rust Trait；宏不会建立另一套 Agent 执行模型。当前仓库中的 Crate 版本为 **0.1.2**。
+
+通过核心 Crate 的 `macro` Feature 使用重新导出的宏：
 
 ```toml
 [dependencies]
-ambi = "0.3"
-ambi-macros = "0.1"
+ambi = { version = "0.4.1", features = ["macro"] }
+serde = { version = "1", features = ["derive"] }
 ```
 
----
+也可以直接依赖匹配版本的 `ambi-macros`。
 
-## `#[tool]` — 自动为任意函数实现 `Tool`
-
-不用手动实现 `Tool` trait（定义 `Args`、`Output`、`ToolDefinition` 和异步 `call()`），只需在任意 `async fn` 上标注 `#[tool]`，宏会为你生成所有代码。
-
-### 基本用法
+## `#[tool]`：把 Rust 函数变成 Tool
 
 ```rust
-use ambi_macros::tool;
+use ambi::macros::tool;
 use ambi::types::ToolErr;
 
-#[tool(name = "search_docs", description = "搜索文档")]
-async fn search_docs(query: String) -> Result<String, ToolErr> {
-    Ok(format!("搜索结果：{}", query))
-}
-```
-
-宏会自动生成：
-- 参数结构体 `SearchDocsArgs`（带 `#[derive(Deserialize)]`）
-- 工具结构体 `SearchDocsTool`（实现 `Tool` trait）
-- 从 Rust 类型自动推断 JSON Schema 的 `ToolDefinition`
-- 注册入口 `SearchDocsTool`
-
-### 支持的属性
-
-| 属性 | 短别名 | 默认值 | 说明 |
-|------|--------|--------|------|
-| `name` | — | 函数名 | 暴露给 LLM 的工具名称 |
-| `description` | `desc` | 文档注释 | 工具功能说明（面向 LLM） |
-| `timeout` | `timeout_secs` | `None` | 工具超时秒数 |
-| `idempotent` | `is_idempotent` | `false` | 超时后是否可以安全重试 |
-| `retries` | `max_retries` | `None` | 超时重试次数（仅幂等工具） |
-| `params` | — | 空 | 每个参数的 LLM 面向描述 |
-
-### 参数描述 `params(...)`
-
-用 `params` 为模型提供更丰富的路由提示：
-
-```rust
-#[tool(
-    name = "check_city_weather",
-    description = "获取指定城市的实时天气",
-    params = {
-        "city": "要查询的城市名称",
-        "days": "可选预报天数"
-    }
-)]
-async fn get_weather(city: String, days: Option<u32>) -> Result<WeatherOutput, ToolErr> {
-    // ...
-}
-```
-
-### 类型推断
-
-宏自动将 Rust 类型映射为 JSON Schema 类型：
-
-| Rust 类型 | JSON Schema |
-|-----------|-------------|
-| `String`, `&str`, `char` | `"string"` |
-| `i8`–`i64`, `u8`–`u64`, `isize`, `usize` | `"integer"` |
-| `f32`, `f64` | `"number"` |
-| `bool` | `"boolean"` |
-| `Vec<T>`, `HashSet<T>` | `"array"` |
-| `HashMap<K,V>`, `serde_json::Value` | `"object"` |
-| `Option<T>` | 推断内部类型，**非必填** |
-
-### 注册宏定义的工具
-
-宏生成的结构体名为 `{帕斯卡命名函数}Tool`。通过 `.tool()` 注册：
-
-```rust
-let agent = Agent::make(config).await?
-    .preamble("你是一个天气助手。")
-    .tool(GetWeatherTool)?;
-```
-
-### 生成的代码示例
-
-对于函数 `async fn search_docs(query: String) -> Result<String, ToolErr>`，宏大致生成：
-
-```rust
-#[derive(::serde::Deserialize)]
-pub struct SearchDocsArgs {
-    pub query: String,
+/// 两个整数相加。
+#[tool(name = "add", timeout = 10, idempotent)]
+async fn add(a: i32, b: i32) -> Result<i32, ToolErr> {
+    Ok(a + b)
 }
 
-pub struct SearchDocsTool;
-
-#[async_trait::async_trait]
-impl ::ambi::types::Tool for SearchDocsTool {
-    const NAME: &'static str = "search_docs";
-    type Args = SearchDocsArgs;
-    type Output = String;
-
-    fn definition(&self) -> ::ambi::types::ToolDefinition { /* ... */ }
-    async fn call(&self, args: Self::Args) -> Result<String, ToolErr> {
-        search_docs(args.query).await
-    }
-}
+// 宏生成 AddTool，实现 ambi::types::Tool。
+// let agent = Agent::make(engine_config).await?.tool(AddTool)?;
 ```
 
----
+支持 `name`、`description` / `desc`、`timeout` / `timeout_secs`、`idempotent` / `is_idempotent`、`max_retries` / `retries`，以及 `params(key = "description", ...)` 形式的参数描述。`Option<T>` 会生成非必填的 JSON Schema 属性。
 
-## `#[agent]` — 自动生成 Agent 门面
+宏生成工具仍然遵守普通 `Tool` 的超时、幂等性与重试规则。宏不能让外部副作用自动成为事务。参见 [工具](/zh/guide/tools)。
 
-`#[agent]` 宏生成一个完整的 Agent 包装结构体，附带流式构建器，消除所有手动接线。
+## `#[agent]`：可选的门面类型
 
 ```rust
-use ambi_macros::{agent, tool};
+use ambi::macros::{agent, tool};
 use ambi::types::ToolErr;
 
 #[tool(name = "add", timeout = 10, idempotent)]
@@ -129,93 +47,4 @@ async fn add(a: i32, b: i32) -> Result<i32, ToolErr> {
 pub struct DevAgent;
 ```
 
-### 宏生成的内容
-
-**1. 门面结构体** — 整合 `Agent`、`AgentState` 和管道：
-
-```rust
-pub struct DevAgent {
-    pub agent: Agent,
-    pub state: Arc<RwLock<AgentState>>,
-    runner: ChatRunner,
-}
-```
-
-**2. 构建器** — 流式构造：
-
-```rust
-let assistant = DevAgent::builder(engine_config)
-    .preamble("你是一个智能助手。")
-    .session_id("my-session")
-    .build()
-    .await?;
-```
-
-**3. 便捷方法** — 直接调用常见操作：
-
-```rust
-// 对话
-let reply = assistant.chat("114514 加 8080 等于多少？").await?;
-
-// 流式
-let mut stream = assistant.chat_stream("讲个故事").await?;
-
-// 多模态
-let reply = assistant.execute(vec![
-    ContentPart::Text { text: "这张图里有什么？" },
-    ContentPart::Image { base64: image_str },
-]).await?;
-
-// 上下文管理
-assistant.set_dynamic_context("相关文档：...").await;
-assistant.append_dynamic_context("用户语言：zh-CN").await;
-assistant.clear_dynamic_context().await;
-assistant.clear_history().await;
-```
-
-### 支持的属性
-
-| 属性 | 默认值 | 说明 |
-|------|--------|------|
-| `tools = [...]` | `[]` | 要注册的工具结构体列表 |
-| `pipeline = ...` | `ChatRunner` | 自定义管道实现 |
-
-### 自定义管道示例
-
-```rust
-#[agent(tools = [AddTool], pipeline = MyCustomPipeline)]
-pub struct DevAgent;
-```
-
-用自定义运行器构建：
-
-```rust
-let assistant = DevAgent::builder(engine_config, MyCustomPipeline)
-    .preamble("你是一个助手。")
-    .build()
-    .await?;
-```
-
----
-
-## 添加依赖
-
-`ambi-macros` 是独立子库，需要与 `ambi` 分开添加：
-
-```toml
-[dependencies]
-ambi = "0.3"
-ambi-macros = "0.1"
-```
-
-```bash
-# 或通过 cargo-add：
-cargo add ambi-macros
-```
-
-然后直接导入宏：
-
-```rust
-use ambi_macros::tool;
-use ambi_macros::agent;
-```
+这会在核心 Agent/State/Pipeline 机制上生成一个便利的门面与 Builder，并**不改变** Agent 共享能力、State 保存会话的基本边界。完整用例见 [`examples/crate_agent_in_macro.rs`](https://github.com/Maskviva/Ambi/blob/main/examples/crate_agent_in_macro.rs)，理念参见 [设计理念](/zh/advanced/design-philosophy)。

@@ -1,33 +1,20 @@
-# 快速开始
+# 快速开始（Rust，0.4.1）
 
-这篇文章带你 5 分钟跑通一个可工作的 Agent。你需要：
-
-- Rust 1.75+
-- 一个 API Key（用云后端）或一个 GGUF 模型文件（本地推理）
+这份指南从最小的文本 Agent 开始。Ambi 是一个 **Agent Runtime**，不是强制性的多智能体框架：选择 Engine，把可共享能力装进 `Agent`，为会话创建独立的 `AgentState`，最后使用某个 `Pipeline` 执行。
 
 ## 1. 添加依赖
 
 ```toml
 [dependencies]
-ambi = "0.3"
+ambi = "0.4.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
-Ambi 默认启用 `openai-api` 特性。如果你只用云后端，编译很快。
+默认开启 `openai-api` Feature。如果你使用的 Registry 尚未发布 `0.4.1`，可改用匹配源码的 `path` 或 Git 依赖。先设置环境变量 `OPENAI_API_KEY`。
 
-本地推理（llama.cpp）：
+## 2. 完成第一次聊天
 
-```toml
-ambi = { version = "0.3", default-features = false, features = ["llama-cpp"] }
-```
-
-GPU 加速子特性：`cuda`、`vulkan`、`metal`、`rocm`——只能选一个。
-
-```toml
-ambi = { version = "0.3", features = ["llama-cpp", "cuda"] }
-```
-
-## 2. 最小 Agent
+编写 `src/main.rs`：
 
 ```rust
 use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
@@ -35,50 +22,56 @@ use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = LLMEngineConfig::OpenAI(OpenAIEngineConfig {
-        api_key: std::env::var("OPENAI_API_KEY")?,
-        base_url: "https://api.openai.com/v1".into(),
-        model_name: "gpt-4o".into(),
-        temp: 0.7,
-        top_p: 0.95,
-    });
+    let key = std::env::var("OPENAI_API_KEY")?;
+    let cfg = OpenAIEngineConfig::create(key, "gpt-4o-mini")
+        .temp(0.7);
 
-    let agent = Agent::make(config).await?
-        .preamble("你是一个乐于助人的助手。")
-        .template(ambi::ChatTemplateType::Chatml);
-
-    let state = AgentState::new_shared("session-001");
+    let agent = Agent::make(LLMEngineConfig::OpenAI(cfg)).await?
+        .preamble("你是一个简洁的助手。");
+    let state = AgentState::new_shared("session-1");
     let runner = ChatRunner::default();
 
-    let reply = runner.chat(&agent, &state, "你好！").await?;
-    println!("{}", reply);
-
+    let answer = runner.chat(&agent, &state, "你好，Ambi！").await?;
+    println!("{answer}");
     Ok(())
 }
 ```
 
-`AgentState::new_shared("...")` 是一个便捷构造器，内部用 `Arc<RwLock<>>` 包装状态以实现线程安全。`session_id` 参数为分布式追踪和 KV Cache 槽位分配建立物理唯一性。`Agent::make` 加载引擎（llama.cpp 时在阻塞线程上加载），然后用 builder 链式配置。`ChatRunner::default()` 创建默认最大并发为 5 的运行器。
+执行 `cargo run`。`Agent::make` 初始化引擎；`ChatRunner::default()` 使用 ReAct 风格的聊天／工具循环，默认单次循环内最大工具并发为 5。
 
-## 3. 切换引擎
+## 3. 切换模型后端
 
-云和本地之间切换只需要改一行——换配置枚举变体：
+**OpenAI 兼容端点：**
 
 ```rust
-// 云
-let config = LLMEngineConfig::OpenAI(openai_cfg);
-
-// 本地（需要 "llama-cpp" 特性）
-let config = LLMEngineConfig::Llama(llama_cfg);
+let cfg = OpenAIEngineConfig::create(api_key, "your-model")
+    .base_url("https://your-endpoint.example/v1".into())
+    .temp(0.2);
 ```
 
-其他一切——工具、模板、流、格式化器——都不变。
+**本地 GGUF / llama.cpp**（仅原生平台）：
 
-## 4. 运行时要求
+```toml
+ambi = { version = "0.4.1", default-features = false, features = ["llama-cpp"] }
+```
 
-Ambi 需要 Tokio 的 `rt-multi-thread` 特性。单线程运行时跑不起来，因为 `Agent::make` 内部会调用 `spawn_blocking`。
+```rust
+use ambi::llm::providers::llama_cpp::config::LlamaEngineConfig;
+let cfg = LlamaEngineConfig::builder("./models/model.gguf")
+    .n_ctx(4096)
+    .n_tokens(512)
+    .build();
+let engine_cfg = LLMEngineConfig::Llama(cfg);
+```
 
-## 下一步
+GPU 可选择 `cuda`、`vulkan`、`metal`、`rocm` 其中合适的一种，不要同时启用互斥的硬件后端。浏览器 WebAssembly 走 OpenAI 兼容后端，而非 llama.cpp。
 
-- [基础 Agent](/zh/guide/basic-agent) —— 系统提示词、聊天模板、多轮对话
-- [工具调用](/zh/guide/tools) —— 让 Agent 能调用 Rust 函数
-- [配置详解](/zh/guide/configuration) —— 驱逐策略、迭代限制等
+## 4. 继续学习
+
+- [设计理念](/zh/advanced/design-philosophy)：为什么要区分 Agent、Pipeline 和 Leaf
+- [基础 Agent](/zh/guide/basic-agent)：独立会话与动态上下文
+- [工具](/zh/guide/tools)：向模型提供类型化 Rust 操作
+- [Leaf](/zh/guide/leaf)：通过 `sub-agent` 可选功能实现一次性任务委派
+- [自定义 Pipeline](/zh/advanced/custom-pipeline)：自行定义智能体的执行方式
+
+对应源码示例：[`examples/chat_cloud.rs`](https://github.com/Maskviva/Ambi/blob/main/examples/chat_cloud.rs)、[`examples/chat_local.rs`](https://github.com/Maskviva/Ambi/blob/main/examples/chat_local.rs)。

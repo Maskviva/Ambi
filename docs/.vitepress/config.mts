@@ -41,12 +41,14 @@ export default defineConfig({
             label: 'English',
             lang: 'en-US',
             title: 'Ambi Docs',
-            description: 'A flexible, multi-backend AI agent framework',
+            description: 'A small, composable AI Agent Runtime for Rust',
 
             themeConfig: {
                 logo: '/logo-text.svg',
                 nav: [
                     {text: 'Home', link: '/'},
+                    {text: 'Philosophy', link: '/advanced/design-philosophy'},
+                    {text: 'Leaf', link: '/guide/leaf'},
                     {text: 'Guide', link: '/guide/getting-started'},
                     {text: 'Advanced', link: '/advanced/architecture'},
                     {text: 'Platform', link: '/platform/native'},
@@ -60,6 +62,7 @@ export default defineConfig({
                             text: 'Guide',
                             items: [
                                 {text: 'Getting Started', link: '/guide/getting-started'},
+                                {text: 'Leaf Task Delegation', link: '/guide/leaf'},
                                 {text: 'Basic Agent', link: '/guide/basic-agent'},
                                 {text: 'Tools', link: '/guide/tools'},
                                 {text: 'Configuration', link: '/guide/configuration'},
@@ -72,13 +75,13 @@ export default defineConfig({
                         {
                             text: 'Advanced Topics',
                             items: [
+                                {text: 'Design Philosophy', link: '/advanced/design-philosophy'},
                                 {text: 'Architecture Overview', link: '/advanced/architecture'},
                                 {text: 'Custom Engine', link: '/advanced/custom-engine'},
                                 {text: 'Custom Pipeline', link: '/advanced/custom-pipeline'},
                                 {text: 'Stream Formatter', link: '/advanced/stream-formatter'},
                                 {text: 'Tool Parser', link: '/advanced/tool-parser'},
-                                {text: 'Context Eviction', link: '/advanced/context-eviction'},
-                                {text: 'Design Philosophy', link: '/advanced/design-philosophy'}
+                                {text: 'Context Eviction', link: '/advanced/context-eviction'}
                             ]
                         }
                     ],
@@ -127,12 +130,14 @@ export default defineConfig({
             lang: 'zh-CN',
             link: '/zh/',
             title: 'Ambi 文档',
-            description: '灵活、多后端、可定制的 AI 智能体框架',
+            description: '小而可组合的 Rust AI Agent Runtime',
 
             themeConfig: {
                 logo: '/logo-text.svg',
                 nav: [
                     {text: '首页', link: '/zh/'},
+                    {text: '设计理念', link: '/zh/advanced/design-philosophy'},
+                    {text: 'Leaf', link: '/zh/guide/leaf'},
                     {text: '指南', link: '/zh/guide/getting-started'},
                     {text: '高阶开发', link: '/zh/advanced/architecture'},
                     {text: '平台', link: '/zh/platform/native'},
@@ -146,6 +151,7 @@ export default defineConfig({
                             text: '指南',
                             items: [
                                 {text: '快速开始', link: '/zh/guide/getting-started'},
+                                {text: 'Leaf 任务委派', link: '/zh/guide/leaf'},
                                 {text: '基础 Agent', link: '/zh/guide/basic-agent'},
                                 {text: '工具调用', link: '/zh/guide/tools'},
                                 {text: '配置详解', link: '/zh/guide/configuration'},
@@ -158,13 +164,13 @@ export default defineConfig({
                         {
                             text: '高阶开发',
                             items: [
+                                {text: '设计理念', link: '/zh/advanced/design-philosophy'},
                                 {text: '架构概览', link: '/zh/advanced/architecture'},
                                 {text: '自定义引擎', link: '/zh/advanced/custom-engine'},
                                 {text: '自定义管道', link: '/zh/advanced/custom-pipeline'},
                                 {text: '流式格式化器', link: '/zh/advanced/stream-formatter'},
                                 {text: '工具解析器', link: '/zh/advanced/tool-parser'},
-                                {text: '上下文驱逐', link: '/zh/advanced/context-eviction'},
-                                {text: '设计理念', link: '/zh/advanced/design-philosophy'}
+                                {text: '上下文驱逐', link: '/zh/advanced/context-eviction'}
                             ]
                         }
                     ],

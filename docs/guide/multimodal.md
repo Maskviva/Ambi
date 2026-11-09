@@ -1,51 +1,32 @@
-# Multimodal Input
+# Multimodal input: capability belongs to the engine
 
-Ambi supports image inputs if the engine backend handles them. This works with OpenAI's vision models (gpt-4o, gpt-4-vision) and local VLM models through llama.cpp.
+Ambi's request format can carry text and image content together. Whether an image can be processed depends on the **selected engine**, its model and the compiled features.
 
-## Sending images
-
-Use `ContentPart::Image` with a base64-encoded image string:
+## Send image content
 
 ```rust
+use ambi::agent::pipeline::Pipeline;
 use ambi::ContentPart;
-use ambi::types::Message;
 
 let parts = vec![
-    ContentPart::Text { text: "What's in this image?".into() },
-    ContentPart::Image { base64: image_base64_string },
+    ContentPart::Text { text: "Describe this image".into() },
+    ContentPart::Image { base64: image_data },
 ];
-
-let reply = runner.execute(&agent, &state, parts).await?;
+let answer = runner.execute(&agent, &state, parts).await?;
 ```
 
-Or use the convenience method:
+`image_data` must be supplied by the application. The `base64` field supports a Base64/data URL, and some backends also accept an HTTP image URL. Do not assume the same image representation is supported by every engine.
 
-```rust
-let msg = Message::user_multimodal("Describe this", &image_base64);
+## OpenAI-compatible API
+
+`OpenAIEngineConfig::create()` sets `supports_vision` for recognized model-name prefixes. When a compatible endpoint supports vision under an unrecognized name, opt in using `.with_vision(true)`. This flag **declares** support; it does not inspect the remote model. Inputs with images are rejected up front if the engine reports `supports_multimodal() == false`.
+
+## Local llama.cpp
+
+Image processing depends on a compatible model, the `llama-cpp` backend and the `mtmd` feature; some architectures require a matching external `mmproj` file while others have integrated support. Simply enabling a feature does not turn a text-only GGUF into a vision model.
+
+```toml
+ambi = { version = "0.4.1", default-features = false, features = ["llama-cpp", "mtmd"] }
 ```
 
-### URL support
-
-The `base64` field in `ContentPart::Image` accepts either a base64 data string or an HTTP URL. For OpenAI backends, sending a URL directly is more efficient:
-
-```rust
-ContentPart::Image { base64: "https://example.com/photo.jpg".into() }
-```
-
-## Fail-fast
-
-If you send an image to an engine that doesn't support multimodal, you get an `EngineError` immediately:
-
-```
-Security Check Failed: The current LLM engine does not support multimodal (image) inputs.
-```
-
-This check runs before any tokens are sent, so you don't waste API calls.
-
-## Engine support
-
-| Engine | Multimodal | Notes |
-|--------|-----------|-------|
-| OpenAI (`gpt-4o`, `gpt-4-vision`) | Yes | URL or base64 |
-| Llama.cpp vision models | Yes (with `mtmd` feature) | Qwen2-VL, LLaVA |
-| Custom engine | Depends on `supports_multimodal()` | Trait method returns false by default |
+Image inputs are counted and formatted differently across providers. Do not treat text-only eviction estimates as a precise multimodal context budget. See [Configuration](/guide/configuration) and [Context eviction](/advanced/context-eviction).

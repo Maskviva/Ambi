@@ -1,71 +1,45 @@
-# ambi-memory
+# ambi-memory：持久化策略属于扩展
 
-Ambi AI 智能体框架的可插拔三维记忆扩展。
+`ambi-memory` 与核心 Ambi 保持分离。Runtime 负责会话历史和 FIFO 驱逐；**要不要长期记忆、将知识保存在哪里，由应用决定**。
+
+在 0.4.1 仓库中，伴随的 `ambi-memory` 源码版本为 `0.1.1`。
 
 ```toml
 [dependencies]
-ambi-memory = "0.1"
+ambi = "0.4.1"
+ambi-memory = "0.1.1"
 ```
 
-## 三个记忆维度
+如 Registry 尚未发布对应版本或依赖不匹配，可使用同一仓库的 `path` 依赖。
 
-### KV 记忆——精确状态存储
+## 三种记忆契约
 
-按会话存储和检索任意键值对。适用于反思日记、用户设置、状态机标记等需要精确查找的结构化数据。
+| Trait | 职责 | 内置实现 |
+| --- | --- | --- |
+| `KvMemoryProvider` | 会话范围的精确 KV | `InMemoryKvProvider` |
+| `SummaryMemoryProvider` | 保存与读取历史摘要 | `InMemorySummaryProvider` |
+| `SemanticMemoryProvider` | 语义记忆存储与检索 | **仅 Trait**，需自建 Provider |
+
+`InMemory*` 仅在进程内保存数据，不具备数据库级持久性。Crate **没有**开箱即用的向量数据库或 Embedding 后端。
+
+## KV 示例
 
 ```rust
+use ambi::AgentState;
 use ambi_memory::{AgentStateMemoryExt, InMemoryKvProvider};
 
-let kv = InMemoryKvProvider::new();
+let provider = InMemoryKvProvider::new();
 let mut state = AgentState::new("session-1");
-
-state.remember_kv(&kv, "user_name", "Alice").await?;
-state.recall_kv_into_context(&kv).await?;
-// dynamic_context 现在包含："[STATE MEMORY]:\n- user_name: Alice\n"
+state.remember_kv(&provider, "project", "Ambi").await?;
+state.recall_kv_into_context(&provider).await?;
 ```
 
-### 语义记忆——向量化召回
+记忆注入动态上下文是显式操作。应用需要自行清理过期上下文；Memory 扩展不会隐式接管 `Agent` 的生命周期。
 
-按语义相似度存储和检索历史对话片段。适用于跨会话的长期记忆。通过实现 trait 对接你的向量数据库（Milvus, Qdrant, Pinecone 等）。
+## 摘要与历史驱逐
 
-```rust
-use ambi_memory::SemanticMemoryProvider;
+可以通过 `on_evict` 观察被删除消息，并使用自己的 Provider 和任务调度逻辑生成摘要。但该回调本身不是持久后台任务系统。
 
-async fn remember(provider: &dyn SemanticMemoryProvider, state: &mut AgentState) {
-    state.archive_semantic(provider, "用户提到他们更喜欢 Python。").await?;
-    state.recall_semantic_into_context(provider, "用户喜欢什么语言？", 3).await?;
-}
-```
+Leaf 临时状态不使用父级的驱逐持久化回调，因此不会自动把完整内部历史写入长期记忆；父级仅接收返回结果。
 
-### 摘要记忆——上下文驱逐的防遗忘机制
-
-当 FIFO 上下文驱逐算法丢弃旧消息时，该提供者利用 LLM 自身将这些消息自动压缩为滚动摘要。
-
-```rust
-use ambi_memory::{AgentStateMemoryExt, InMemorySummaryProvider};
-
-let summary_provider = InMemorySummaryProvider::new();
-
-// 每次对话前，注入累积的摘要：
-state.inject_summary_context(&summary_provider).await?;
-
-// 在 on_evict 回调中，压缩被丢弃的消息：
-state.summarize_evicted_messages(&agent, &summary_provider, &evicted).await?;
-```
-
-## 扩展 Trait
-
-三个记忆维度通过统一的 `AgentStateMemoryExt` trait 暴露，该 trait 在 `AgentState` 上实现：
-
-| 方法 | 维度 | 作用 |
-|------|------|------|
-| `remember_kv(provider, key, value)` | KV | 存储一个值 |
-| `recall_kv_into_context(provider)` | KV | 将所有 KV 对注入 `dynamic_context` |
-| `archive_semantic(provider, text)` | 语义 | 嵌入并持久化文本 |
-| `recall_semantic_into_context(provider, query, limit)` | 语义 | 将 Top-N 相似记忆注入 `dynamic_context` |
-| `inject_summary_context(provider)` | 摘要 | 将滚动摘要前置到 `dynamic_context` |
-| `summarize_evicted_messages(agent, provider, evicted)` | 摘要 | 通过 LLM 压缩被驱逐的消息 |
-
-## 后端实现
-
-该库内置了**内存级**实现（`InMemoryKvProvider`, `InMemorySummaryProvider`），用于测试和单机部署。生产环境中，请针对你的数据库实现对应 trait。
+参见 [上下文驱逐](/zh/advanced/context-eviction) · [Leaf](/zh/guide/leaf)。

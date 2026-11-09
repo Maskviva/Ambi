@@ -1,99 +1,41 @@
-# Stream Formatter
+# Stream formatter: presentation, not protocol
 
-A stream formatter processes the LLM's output token-by-token in real time, deciding what to show the user and what to hide.
+`StreamFormatter` processes text chunks for display. It is a replaceable presentation strategy; it does **not** change the semantics of tool authorization or model inference.
 
-## Why you need one
+## Built-in choices
 
-When the LLM outputs raw text, it may include:
-- `<think>` / `</think>` tags (reasoning blocks)
-- `[TOOL_CALL]...[/TOOL_CALL]` blocks (raw tool call JSON)
+- `PassThroughFormatter`: the default, forwards the received text.
+- `StandardStreamFormatter`: recognizes configured tool-call tags and think markers, and emits labelled display text such as `[Thinking]:` and `[Content]:`.
 
-These are useful for the machine but noisy for humans. The formatter strips or replaces them before the text reaches the user.
-
-## Default: PassthroughFormatter
-
-By default, nothing is filtered – all text goes straight through:
+Enable the standard formatter with:
 
 ```rust
-pub struct PassThroughFormatter;
-impl StreamFormatter for PassThroughFormatter {
-    fn push(&mut self, token: &str) -> String {
-        token.to_string()
-    }
-    fn flush(&mut self) -> String {
-        String::new()
-    }
-}
-```
-
-## Standard formatting
-
-```rust
-let agent = Agent::make(config).await?
+let agent = Agent::make(engine_config).await?
     .with_standard_formatting();
 ```
 
-This enables `StandardStreamFormatter`, which:
+The standard implementation maintains a bounded internal buffer (default 8192 bytes). Overflow clears the formatter's buffer and logs an error. That is a local buffer guard, **not** an end-to-end proof that all streaming workloads are memory bounded.
 
-1. Scans each incoming token for the tool start/end tags and think tags
-2. Buffers text within tool call blocks and suppresses it
-3. Replaces think blocks with `[Thinking]:\n`
-4. Labels non-tool content with `[Content]:`
-5. Enforces a max buffer size (8KB by default) to prevent OOM on large chunks
-
-Example transformation:
-
-```
-Raw LLM output:
-  Let me think about this
-  <think>
-  The user is asking about the weather...
-  </think>
-  [TOOL_CALL]{"name":"get_weather","args":{"city":"Tokyo"}}[/TOOL_CALL]
-  The weather in Tokyo is...
-
-Formatted output:
-  [Thinking]:
-  The user is asking about the weather...
-  [Content]:
-  The weather in Tokyo is...
-```
-
-## Custom StreamFormatter
-
-Implement the `StreamFormatter` trait:
+## Write a formatter
 
 ```rust
 use ambi::types::StreamFormatter;
 
-struct MyFormatter;
+struct Plain;
 
-impl StreamFormatter for MyFormatter {
-    fn push(&mut self, token: &str) -> String {
-        // Simple: just uppercase everything
-        token.to_uppercase()
+impl StreamFormatter for Plain {
+    fn push(&mut self, chunk: &str) -> String {
+        chunk.to_string()
     }
-
     fn flush(&mut self) -> String {
         String::new()
     }
 }
+
+let agent = Agent::make(engine_config).await?
+    .with_stream_formatter(|| Box::new(Plain));
 ```
 
-Then inject it:
+The API takes a **factory closure** so each streaming request gets a fresh formatter instance. Its two required methods are `push(&mut self, &str) -> String` and `flush(&mut self) -> String`.
 
-```rust
-let agent = Agent::make(config).await?
-    .with_stream_formatter(|| Box::new(MyFormatter));
-```
-
-The `with_stream_formatter` method takes a **factory closure** (not an instance) because a new formatter is created per streaming request. This is important for stateful formatters that accumulate buffers.
-
-## When the formatter is called
-
-- In streaming mode: every LLM token chunk goes through `push()`, and `flush()` runs after the stream ends.
-- In sync mode: the full output is passed through a formatter once, but the pipeline constructs it internally from `push()` + `flush()` calls.
-
-## Buffer overflow protection
-
-`StandardStreamFormatter` has a hard cap (`max_buffer_size`, default 8192 bytes). If the buffer exceeds it, the formatter clears itself and logs an error. This is a safety net against pathological LLM output.
+Text formatting is useful for human-readable streams; do not parse it as a structured tool/audit event transport. For the incoming tool format, see [Tool Parser](/advanced/tool-parser); for output semantics, see [Streaming](/guide/streaming).

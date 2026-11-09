@@ -1,117 +1,70 @@
-# 配置详解
+# 配置与 Feature 边界
 
-## AgentConfig
+Ambi 的配置对应其设计分工：分别选择模型推理**机制**、执行**策略**和会话**状态**。
 
-`AgentConfig` 在调用 `Agent::make()` 时内部创建。默认值对大多数场景够用：
+## Cargo Features（0.4.1）
 
-```rust
-pub struct AgentConfig {
-    pub system_prompt: String,              // 默认：""
-    pub template: ChatTemplate,             // 默认：Chatml
-    pub max_iterations: usize,              // 默认：10
-    pub eviction_strategy: EvictionStrategy, // 默认：8K tokens
-}
-```
+| Feature | 作用 | 默认 |
+| --- | --- | --- |
+| `openai-api` | OpenAI 兼容 API | **开启** |
+| `llama-cpp` | 本地 GGUF（仅原生平台） | 关闭 |
+| `mtmd` | llama.cpp 多模态支持 | 关闭 |
+| `cuda`、`vulkan`、`metal`、`rocm` | 硬件加速；按平台选择合适的一种 | 关闭 |
+| `dynamic-link` | llama.cpp 动态链接 | 关闭 |
+| `macro` | 重新导出 `ambi-macros` | 关闭 |
+| `sub-agent` | 编译 ChatRunner Leaf 能力 | 关闭 |
 
-通过 builder 方法控制，不直接构造 `AgentConfig`。
+编译 `sub-agent` **不会**自动启用 Leaf；仍需显式调用 `ChatRunner::with_leaf()`。
 
-## EvictionStrategy
+## Agent 配置
 
-控制什么时候把旧消息从上下文中移除：
-
-```rust
-pub struct EvictionStrategy {
-    pub max_safe_tokens: usize,  // 默认：8000
-}
-```
-
-当 `total_tokens + prompt_overhead > max_safe_tokens` 时，从最早的消息开始弹出（FIFO），直到预算够用。
+`Agent::make(cfg)` 初始化共享推理资源，后续 Builder 调整配置：
 
 ```rust
-let agent = Agent::make(config).await?
-    .with_eviction_strategy(EvictionStrategy { max_safe_tokens: 4096 });
+use ambi::config::EvictionStrategy;
+
+let agent = Agent::make(engine_config).await?
+    .preamble("你是一个可靠的助手。")
+    .max_iterations(8)
+    .with_eviction_strategy(EvictionStrategy { max_safe_tokens: 4096 })
+    .with_standard_formatting();
 ```
 
-默认 8K 对 8K 上下文的模型比较安全。128K 模型可以设到 64K 或更高。具体值取决于你留多少输出空间。
+`AgentConfig` 默认值：空系统提示词、ChatML 模板、10 次迭代、8,000 的近似上下文安全 Token 阈值。`ChatRunner::default()` 每个执行循环内工具并发上限为 5。**它们不是进程全局预算。**
 
-## LLMEngineConfig
-
-传给 `Agent::make()` 的枚举：
+## OpenAI 兼容配置
 
 ```rust
-pub enum LLMEngineConfig {
-    #[cfg(feature = "openai-api")]
-    OpenAI(OpenAIEngineConfig),
-    #[cfg(feature = "llama-cpp")]
-    Llama(LlamaEngineConfig),
-    Custom(Box<dyn LLMEngineTrait>),
-}
+use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
+
+let cfg = OpenAIEngineConfig::create(api_key, "your-model")
+    .base_url("https://your-endpoint.example/v1".into())
+    .temp(0.1)
+    .top_p(1.0)
+    .with_vision(false);
 ```
 
-### OpenAI 配置
+`create()` 默认使用 OpenAI URL、温度 `0.0`、top-p `1.0`；`supports_vision` 按识别出的模型名前缀推断。若是支持图片的未知兼容端点，可显式 `.with_vision(true)`。这表示调用方**声明**模型能力，并非实时探测。
+
+OpenAI Engine 另外具有内部请求并发上限（默认 32）与请求超时（默认 300 秒），它们与 ChatRunner 的工具并发不是一回事。
+
+## llama.cpp 配置
 
 ```rust
-OpenAIEngineConfig {
-    api_key: String,
-    base_url: String,    // "https://api.openai.com/v1"
-    model_name: String,  // "gpt-4o"
-    temp: f32,           // 0.0 - 2.0
-    top_p: f32,          // 0.0 - 1.0
-}
+use ambi::llm::providers::llama_cpp::config::LlamaEngineConfig;
+let cfg = LlamaEngineConfig::builder("./models/model.gguf")
+    .n_ctx(4096)
+    .n_tokens(512)
+    .max_tokens(1024)
+    .build();
 ```
 
-`base_url` 可以指向任何兼容 OpenAI 接口的端点（DeepSeek、Ollama 的 OpenAI 适配器等）。
+Builder 从保守的 CPU 配置起步。模型文件必须存在。校验会拒绝 `n_ctx = 0`、超出 `1..=n_ctx` 的 Batch 大小和非正数 `max_tokens`。GPU 功能需要兼容构建。详见 [原生平台](/zh/platform/native)。
 
-### Llama.cpp 配置
+## Leaf 配置
 
-```rust
-LlamaEngineConfig {
-    model_path: String,              // .gguf 模型文件路径
-    mmproj_path: Option<String>,     // 外部视觉投影模型（如 mmproj-model-f16.gguf）
-    integrated_vision: bool,         // 模型是否具有原生视觉能力
-    max_tokens: i32,                 // 最大预测 token 数
-    buffer_size: usize,              // batch 解码缓冲区大小
-    use_gpu: bool,                   // 是否将层卸载到 GPU
-    n_gpu_layers: u32,               // 卸载到 GPU 的层数
-    n_ctx: u32,                      // 上下文窗口大小
-    n_tokens: usize,                 // prompt 处理的 batch 大小
-    n_seq_max: i32,                  // batch 中最大序列数
-    penalty_last_n: i32,             // 惩罚时考虑的历史 token 数
-    penalty_repeat: f32,             // 重复惩罚系数
-    penalty_freq: f32,               // 频率惩罚系数
-    penalty_present: f32,            // 存在惩罚系数
-    temp: f32,                       // 温度 (0.0 – 2.0)
-    top_p: f32,                      // 核采样阈值
-    seed: u32,                       // 随机种子（确定性生成）
-    min_keep: usize,                 // min-keep 采样边界
-}
-```
+开启 `sub-agent` 后，`LeafConfig` 可覆盖工具名、描述、提示词、迭代上限、内部工具并发和超时；它不提供独立 Engine Registry 或内置工具 Allow-list。参见 [Leaf](/zh/guide/leaf)。
 
-加载时会做校验——必填字段缺失或超范围会立即返回 `EngineError`，而不是推理到一半莫名其妙崩溃。
+## 错误与预算的真实语义
 
-## 特性标志
-
-```toml
-[dependencies]
-ambi = { version = "0.3", default-features = false, features = ["openai-api"] }
-```
-
-| 特性 | 启用什么 | 依赖 |
-|------|---------|------|
-| `openai-api` | OpenAI 兼容云后端 | `async-openai` |
-| `llama-cpp` | 本地 llama.cpp 推理 | `llama-cpp-2`、`llama-cpp-sys-2` |
-| `cuda` | CUDA 加速（隐含 llama-cpp） | + CUDA SDK |
-| `vulkan` | Vulkan 加速 | + Vulkan SDK |
-| `metal` | Apple Metal 加速 | + Metal framework |
-| `rocm` | AMD ROCm 加速 | + ROCm |
-| `mtmd` | Llama 多模态支持 (VLM) | + `base64` |
-
-编译时不能同时启用两个 GPU 后端——有一个 `compile_error!` 守卫。
-
-## 运行时依赖
-
-```toml
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
-```
-
-详见[原生平台](/zh/platform/native)。
+上下文驱逐预算**不等于**精确保证永不超窗；模型模板、动态上下文、图片和不同 Provider 的 Token 统计可能不同。工具超时和禁用非幂等重试，也不意味着外部副作用可以自动回滚。需要更强保证的应用应自己建立相应机制。

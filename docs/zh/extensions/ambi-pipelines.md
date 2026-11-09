@@ -1,99 +1,42 @@
-# ambi-pipelines
+# ambi-pipelines：可选执行策略
 
-Ambi AI 智能体框架的高级认知执行管道。
+`ambi-pipelines` 将高阶认知策略放在 Ambi 小型核心之外。在 Ambi 0.4.1 仓库中，其源码版本为 **0.1.1**。这些 Pipeline 实现统一 `Pipeline` 接口，但**不是**任意可嵌套的图节点。
 
 ```toml
 [dependencies]
-ambi-pipelines = "0.1"
+ambi = "0.4.1"
+ambi-pipelines = "0.1.1"
 ```
 
-本 crate 中的所有管道均实现了 `Pipeline` trait，可以作为默认 `ChatRunner` 的即插即用替代：
+如果 Registry 未发布匹配版本，可以使用同一 Workspace 的 `path` 依赖。
+
+## 内置策略
+
+| Pipeline | 执行方式 | 需要注意 |
+| --- | --- | --- |
+| `StandardRagPipeline` | 检索、打包文档，写入动态上下文，再交给内部 ChatRunner | 会修改 Session 的动态上下文 |
+| `SelfConsistencyPipeline` | 多分支执行并聚合答案 | 暂不支持流式接口 |
+| `BfsBeamSearchPipeline` | 扩展、评估与筛选思考分支 | 需开发者提供 Expander / Evaluator |
+| `ReflexionPipeline` | Actor/Evaluator 循环，利用 KV Provider 记录评语 | 暂不支持流式接口 |
+
+## 示例：RAG Pipeline
 
 ```rust
+use ambi::agent::pipeline::Pipeline;
 use ambi_pipelines::rag::StandardRagPipeline;
 
-let pipeline = StandardRagPipeline::create(my_retriever);
-
-// 可在任何需要 Pipeline 的地方使用
-let reply = pipeline.execute(&agent, &state, input).await?;
-```
-
-## RAG——检索增强生成
-
-检索相关文档，按 token 预算打包进上下文，然后委托给内部的聊天循环。
-
-```rust
-use ambi_pipelines::rag::{StandardRagPipeline, Retriever};
-use async_trait::async_trait;
-
-struct MyRetriever;
-
-#[async_trait]
-impl Retriever for MyRetriever {
-    async fn retrieve(&self, query: &str)
-        -> Result<Vec<Document>, Box<dyn Error + Send + Sync>>
-    {
-        Ok(vec![Document::new("doc-1", "Ambi 是一个 AI 框架。", 0.95)])
-    }
-}
-
-let pipeline = StandardRagPipeline::create(MyRetriever)
+// my_retriever 实现 ambi_pipelines::rag::Retriever。
+let pipeline = StandardRagPipeline::create(my_retriever)
     .max_context_tokens(4096)
-    .concurrency(5);
+    .concurrency(3);
+
+let answer = pipeline.execute(&agent, &state, input_parts).await?;
 ```
 
-`ContextPacker` 按分数降序排列文档，在超出预算前停止，并为 LLM 附加引用 ID。
+`Retriever`、`Document` 属于 `ambi-pipelines`，不是核心 `ambi`。RAG 会把检索片段注入 `AgentState.dynamic_context`，再交给内部 `ChatRunner`；应用应处理上下文新鲜度与共享 State 的并发问题。
 
-### SemanticMemoryRetriever
+## 为什么放在独立 Crate
 
-一个预构建的 `Retriever`，包装了 `ambi-memory` 的 `SemanticMemoryProvider`：
+Ambi 提供执行基础，应用选择认知策略。内置用例不应把完整思维框架强制加到只想使用小型 ReAct 循环或自定义 Pipeline 的开发者身上。
 
-```rust
-use ambi_pipelines::rag::SemanticMemoryRetriever;
-use ambi_memory::SemanticMemoryProvider;
-
-let retriever = SemanticMemoryRetriever::new(my_memory_provider, "session-1", 5);
-let pipeline = StandardRagPipeline::create(retriever);
-```
-
-## 思维链自一致性（Self-Consistency）
-
-并行运行多个独立的推理分支，从每个分支中提取规范答案，通过多数投票选出胜者。
-
-```rust
-use ambi_pipelines::cot::SelfConsistencyPipeline;
-use ambi_pipelines::cot::PatternExtractor;
-
-let pipeline = SelfConsistencyPipeline::create(
-    PatternExtractor::new("答案：", "\n")
-)
-.branches(5)        // 5 条并行推理路径
-.concurrency(5);
-```
-
-## 思维树 BFS 束搜索
-
-通过广度优先束搜索探索多步推理——展开候选思维、评估、剪枝低分分支、保留 Top-B 节点。
-
-```rust
-use ambi_pipelines::tot::BfsBeamSearchPipeline;
-use ambi_pipelines::tot::{TotExpander, TotEvaluator, Evaluation};
-
-let pipeline = BfsBeamSearchPipeline::create(MyExpander, MyEvaluator)
-    .branching_factor(3)   // 每节点 K 个候选思维
-    .beam_width(2)         // 每层保留 B 个节点
-    .max_steps(5);         // 最大探索深度
-```
-
-## Reflexion——执行者-评估者循环
-
-生成响应、评估是否达标、将批评写入持久化 KV 记忆、然后重试，直到通过或耗尽重试次数。
-
-```rust
-use ambi_pipelines::reflexion::ReflexionPipeline;
-use ambi_pipelines::reflexion::{Evaluator, EvaluationResult};
-use ambi_memory::InMemoryKvProvider;
-
-let pipeline = ReflexionPipeline::create(MyEvaluator, InMemoryKvProvider::new())
-    .max_retries(3);
-```
+**Leaf 的范围：** 0.4.1 Leaf 只能显式挂载到 `ChatRunner`；这些扩展可能内部创建 `ChatRunner::default()`，即使编译了 Cargo Feature，默认仍无 Leaf。参见 [Leaf](/zh/guide/leaf) 与 [自定义 Pipeline](/zh/advanced/custom-pipeline)。

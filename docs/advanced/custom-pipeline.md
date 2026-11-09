@@ -1,42 +1,46 @@
-# Custom Pipeline
+# Custom Pipeline: define execution, not a new Agent class
 
-The pipeline is the execution loop that drives the Agent. `ChatRunner` is the default, implementing the full ReAct loop with tool handling and streaming.
+`Pipeline` defines *what happens when a request arrives*. The built-in `ChatRunner` implements a ReAct-style model/tool loop, but a pipeline is not required to use that strategy. Keeping it separate from `Agent` is one of Ambi's central composition boundaries.
 
-## When to write a custom pipeline
+Read [Design philosophy](/advanced/design-philosophy) and [Architecture](/advanced/architecture) first.
 
-- You want a simpler loop without tool support (pure chat)
-- You need different error handling or retry logic
-- You're building a specialized agent (e.g., chain-of-thought only, no tools)
+## The public contract
 
-## Implementing `Pipeline`
+On native targets, `Pipeline` has two required methods:
 
 ```rust
 use ambi::agent::pipeline::Pipeline;
-use ambi::agent::core::{Agent, AgentState};
+// execute(&self, &Agent, &Arc<RwLock<AgentState>>, Vec<ContentPart>) -> Future<Result<String>>
+// execute_stream(...) -> Future<Result<Pin<Box<ReceiverStream<Result<String>>>>>>
+```
+
+The actual trait uses `impl Future` return types and is `Send + Sync` on native targets. Both methods are required; returning a `PipelineError` for an unsupported mode is a legitimate design choice (the built-in Reflexion pipeline does this for streaming).
+
+## A minimal pipeline that composes the built-in runner
+
+This example uses a wrapper rather than accessing private `Agent` internals:
+
+```rust
+use ambi::agent::pipeline::Pipeline;
 use ambi::error::Result;
-use ambi::ContentPart;
-use std::pin::Pin;
-use std::sync::Arc;
+use ambi::{Agent, AgentState, ChatRunner, ContentPart};
+use std::{pin::Pin, sync::Arc};
 use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 
-struct MySimplePipeline;
+struct MyPipeline {
+    inner: ChatRunner,
+}
 
-impl Pipeline for MySimplePipeline {
+impl Pipeline for MyPipeline {
     async fn execute(
         &self,
         agent: &Agent,
         state: &Arc<RwLock<AgentState>>,
         input: Vec<ContentPart>,
     ) -> Result<String> {
-        // Build the request from current state
-        let req = /* ... */;
-
-        // Call the engine directly
-        let response = agent.llm_engine.chat(req).await?;
-
-        // No tool handling – just return the raw text
-        Ok(response)
+        // Add your pre/post-execution policy here.
+        self.inner.execute(agent, state, input).await
     }
 
     async fn execute_stream(
@@ -45,31 +49,31 @@ impl Pipeline for MySimplePipeline {
         state: &Arc<RwLock<AgentState>>,
         input: Vec<ContentPart>,
     ) -> Result<Pin<Box<ReceiverStream<Result<String>>>>> {
-        // ... stream implementation
-        unimplemented!()
+        self.inner.execute_stream(agent, state, input).await
     }
 }
 ```
 
-Note that `llm_engine` is `pub(crate)`, so you can only implement custom pipelines from within the crate, or you compose with `ChatRunner`'s public API.
+For this example, add `tokio-stream = "0.1"` to your dependencies. Construct `MyPipeline { inner: ChatRunner::default() }`, then call `pipeline.execute(...)`; or use `ChatRunner` directly if you do not need another policy layer.
 
-## Making a pipeline that composes with ChatRunner
+## Build a different loop
 
-For most custom requirements, you don't need to replace the entire pipeline – you can customize individual parts:
+A custom pipeline can call `agent.llm_engine()` to access the shared `Arc<LLMEngine>`. It can create `LLMRequest` values and choose its own state and tool orchestration. Because the contract is explicit, implementing a truly different loop requires you to take responsibility for history updates, context construction, streaming and tool policy. Ambi does **not** expose `ChatRunner::run_loop` as a public reusable primitive.
 
-- **Formatting** → custom `StreamFormatter` (see [Stream Formatter](/advanced/stream-formatter))
-- **Tool parsing** → custom `ToolCallParser` (see [Tool Parser](/advanced/tool-parser))
-- **Engine behavior** → custom `LLMEngineTrait` (see [Custom Engine](/advanced/custom-engine))
+**Do not assume arbitrary pipeline composition is already implemented.** For example, `StandardRagPipeline` and `ReflexionPipeline` currently hold an internal `ChatRunner`, rather than accepting any `P: Pipeline`. You can compose around the public interface yourself, but Ambi is not a generic DAG scheduler.
 
-### Pre-built pipelines
+## Why Leaf lives on ChatRunner
 
-The [`ambi-pipelines`](/extensions/ambi-pipelines) extension crate offers production-ready pipeline implementations:
+The 0.4.1 Leaf uses `ChatRunner`'s internal ReAct loop and is added as a tool only when `.with_leaf()` or `.with_leaf_config(...)` is called. Merely enabling its Cargo feature does not change the default runner or pipelines that construct it internally.
 
-| Pipeline | Description |
-|---|---|
-| `StandardRagPipeline` | Retrieval-Augmented Generation with token-aware context packing |
-| `SelfConsistencyPipeline` | Parallel Chain-of-Thought with majority voting |
-| `BfsBeamSearchPipeline` | Tree of Thoughts with BFS beam search |
-| `ReflexionPipeline` | Actor-Evaluator loop with persistent critique memory |
+A custom pipeline is free to implement a *different* temporary-task strategy. It does not need to implement a global `Leaf` trait. See [Leaf](/guide/leaf).
 
-If you still need a completely custom loop, copy `ChatRunner`'s structure and modify what you need.
+## Extension checklist
+
+- Decide who owns shared configuration and who owns session state.
+- Define streaming behavior deliberately, even if it is unsupported.
+- Do not mutate the same session from overlapping runs unless you coordinate them.
+- Ensure tool permissions, retries and external side effects are application-appropriate.
+- Keep internal execution details out of the parent history unless they are needed.
+
+Explore [`ambi-pipelines`](/extensions/ambi-pipelines) for concrete RAG, CoT, ToT and Reflexion strategies.

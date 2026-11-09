@@ -1,71 +1,35 @@
-# 原生平台 (Linux / Windows / macOS)
+# 原生平台：Linux、Windows、macOS
 
-## 运行时要求
+Ambi 原生端支持 OpenAI 兼容 API、本地 llama.cpp 和自定义 Engine。尽可能让平台差异停留在 Engine 层，不要让上层 Pipeline 被推理硬件绑定。
 
-Ambi 需要 Tokio 的多线程支持。最小配置：
+## Runtime 与构建
 
 ```toml
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+ambi = "0.4.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
-这是 `Agent::make()` 要求的，它内部调用 `tokio::task::spawn_blocking()` 来加载模型，不会阻塞异步运行时。
+建议使用 Tokio 多线程 Runtime，因为 `Agent::make()` 通过内部阻塞任务适配器进行引擎初始化。不要在未针对具体后端测试的情况下，假设 `current_thread` 一定满足所有初始化要求。
 
-如果用了 `current_thread` 运行时：
-
-```rust
-#[tokio::main(flavor = "current_thread")]
-```
-
-`Agent::make()` 会 panic，因为 `spawn_blocking` 依赖多线程运行时。
-
-## LLMEngineConfig::Custom 不一样
-
-`LLMEngineConfig::Custom` 直接包装 `Box<dyn LLMEngineTrait>`，**不会**调 `spawn_blocking`。它在任何 Tokio 运行时下都能工作：
-
-```rust
-use ambi::{Agent, LLMEngineConfig};
-
-let agent = Agent::make(
-    LLMEngineConfig::Custom(Box::new(MockEngine))
-).await?; // 不需要 spawn_blocking
-```
-
-> **注意：** 旧的 `Agent::with_custom_engine()` 已废弃。
-> 请使用 `Agent::make(LLMEngineConfig::Custom(backend)).await` 替代。
-
-## GPU 加速
-
-llama.cpp 本地推理的 GPU 卸载在构建时通过 Cargo 特性配置：
+本地推理：
 
 ```toml
-# CUDA (NVIDIA)
-ambi = { version = "0.3", features = ["llama-cpp", "cuda"] }
-
-# Vulkan（多厂商）
-ambi = { version = "0.3", features = ["llama-cpp", "vulkan"] }
-
-# Metal (Apple Silicon)
-ambi = { version = "0.3", features = ["llama-cpp", "metal"] }
-
-# ROCm (AMD)
-ambi = { version = "0.3", features = ["llama-cpp", "rocm"] }
+ambi = { version = "0.4.1", default-features = false, features = ["llama-cpp"] }
 ```
 
-编译时只能启用一个 GPU 后端，多个会导致 `compile_error!`。
+GPU Feature 包括 `cuda`、`vulkan`、`metal`、`rocm`，**不能同时启用多个**。所需 SDK、驱动和构建工具取决于操作系统；合适的平台也可使用 `dynamic-link`。
 
-## 从源码构建
+可以从 [`LlamaEngineConfig::builder()`](/zh/guide/configuration) 的保守默认值开始，按硬件和模型调整上下文、Batch、模型路径及 GPU 选项。本地推理使用 Worker 队列，不同会话交替执行可能重新 Prefill KV Cache。
+
+## 基础验证
 
 ```bash
-# 只用云后端（编译最快）
-cargo build --no-default-features --features openai-api
-
-# 本地 + CUDA
-cargo build --features "llama-cpp, cuda"
+cargo check --no-default-features --features openai-api
+cargo test --no-default-features --features openai-api
+cargo test --no-default-features --features "openai-api,sub-agent" --test leaf_subagent_test
 ```
 
-## 已知平台差异
+最后一条用于测试可选 Leaf，需要兼容的环境；它不会自动包含在所有默认测试命令中。
 
-- **Windows**：llama.cpp CUDA 构建需要 CUDA SDK 和 MSVC 构建工具。
-- **macOS**：Metal 加速只在 Apple Silicon（M1+）上工作。Intel Mac 回退到 CPU。
-- **Linux**：CUDA 需要 `libcuda.so` 和 NVCC。Vulkan 需要 Vulkan SDK。
+继续：[快速开始](/zh/guide/getting-started) · [架构](/zh/advanced/architecture)。

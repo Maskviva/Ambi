@@ -1,135 +1,41 @@
-# ambi-macros
+# ambi-macros: reduce boilerplate, keep the same runtime
 
-`ambi-macros` is a standalone procedural macro crate that eliminates boilerplate when defining tools and agents.
+`ambi-macros` is a separate procedural macro crate. The generated code implements Ambi's ordinary Rust traits; macros do not introduce a different Agent execution model. In this repository the crate version is **0.1.2**.
+
+Use the `macro` feature of the main crate to access the re-export:
 
 ```toml
 [dependencies]
-ambi = "0.3"
-ambi-macros = "0.1"
+ambi = { version = "0.4.1", features = ["macro"] }
+serde = { version = "1", features = ["derive"] }
 ```
 
----
+Or depend directly on `ambi-macros` at a matching version.
 
-## `#[tool]` — Auto-implement `Tool` for any function
-
-Instead of manually implementing the `Tool` trait (defining `Args`, `Output`, `ToolDefinition`, and async `call()`), annotate any `async fn` with `#[tool]` and the macro generates everything for you.
-
-### Basic usage
+## `#[tool]`: a Rust function becomes a Tool
 
 ```rust
-use ambi_macros::tool;
+use ambi::macros::tool;
 use ambi::types::ToolErr;
 
-#[tool(name = "search_docs", description = "Search documentation")]
-async fn search_docs(query: String) -> Result<String, ToolErr> {
-    Ok(format!("Results for: {}", query))
-}
-```
-
-The macro generates:
-- An arguments struct (`SearchDocsArgs`) with `#[derive(Deserialize)]`
-- A tool struct (`SearchDocsTool`) implementing `Tool`
-- A `ToolDefinition` with auto-inferred JSON Schema from Rust types
-- Registration convenience via `SearchDocsTool`
-
-### Supported attributes
-
-| Attribute      | Short alias  | Default | Description |
-|----------------|-------------|---------|-------------|
-| `name`         | —           | Function name | The tool name exposed to the LLM |
-| `description`  | `desc`      | Doc comment  | What the tool does (LLM-facing) |
-| `timeout`      | `timeout_secs` | `None` | Max wall-clock seconds before abort |
-| `idempotent`   | `is_idempotent` | `false` | Whether the tool is safe to retry on timeout |
-| `retries`      | `max_retries` | `None` | Number of retries on timeout (idempotent only) |
-| `params`       | —           | Empty | Per-parameter LLM-facing descriptions |
-
-### Parameter descriptions with `params(...)`
-
-Use `params` to provide richer routing hints for the model:
-
-```rust
-#[tool(name = "check_city_weather", description = "Get current weather for a city")]
-async fn get_weather(
-    city: String,
-    days: Option<u32>,
-) -> Result<WeatherOutput, ToolErr> {
-    // ...
-}
-```
-
-The `params(...)` attribute provides descriptions for each parameter:
-
-```rust
-#[tool(
-    name = "check_city_weather",
-    description = "Get current weather for a city",
-    params = {
-        "city": "Name of the city to query",
-        "days": "Optional forecast days"
-    }
-)]
-async fn get_weather(city: String, days: Option<u32>) -> Result<WeatherOutput, ToolErr> {
-    // ...
-}
-```
-
-### Type inference
-
-The macro maps Rust types to JSON Schema types automatically:
-
-| Rust type | JSON Schema |
-|-----------|-------------|
-| `String`, `&str`, `char` | `"string"` |
-| `i8`–`i64`, `u8`–`u64`, `isize`, `usize` | `"integer"` |
-| `f32`, `f64` | `"number"` |
-| `bool` | `"boolean"` |
-| `Vec<T>`, `HashSet<T>` | `"array"` |
-| `HashMap<K,V>`, `serde_json::Value` | `"object"` |
-| `Option<T>` | Inferred inner type, **not required** |
-
-### How to register a macro-defined tool
-
-The macro generates a struct named `{PascalCaseFn}Tool`. Register it with `.tool()`:
-
-```rust
-let agent = Agent::make(config).await?
-    .preamble("You are a weather assistant.")
-    .tool(GetWeatherTool)?;
-```
-
-### Generated code example
-
-For a function `async fn search_docs(query: String) -> Result<String, ToolErr>`, the macro generates approximately:
-
-```rust
-#[derive(::serde::Deserialize)]
-pub struct SearchDocsArgs {
-    pub query: String,
+/// Add two integers.
+#[tool(name = "add", timeout = 10, idempotent)]
+async fn add(a: i32, b: i32) -> Result<i32, ToolErr> {
+    Ok(a + b)
 }
 
-pub struct SearchDocsTool;
-
-#[async_trait::async_trait]
-impl ::ambi::types::Tool for SearchDocsTool {
-    const NAME: &'static str = "search_docs";
-    type Args = SearchDocsArgs;
-    type Output = String;
-
-    fn definition(&self) -> ::ambi::types::ToolDefinition { /* ... */ }
-    async fn call(&self, args: Self::Args) -> Result<String, ToolErr> {
-        search_docs(args.query).await
-    }
-}
+// The macro generates AddTool, which implements ambi::types::Tool.
+// let agent = Agent::make(engine_config).await?.tool(AddTool)?;
 ```
 
----
+Attributes include `name`, `description` / `desc`, `timeout` / `timeout_secs`, `idempotent` / `is_idempotent`, `max_retries` / `retries`, and parameter descriptions via `params(key = "description", ...)`. `Option<T>` arguments are optional in the generated JSON Schema.
 
-## `#[agent]` — Auto-generate Agent facade
+The resulting tool still follows the same timeout and idempotency semantics as a manually implemented `Tool`. A macro cannot make external side effects transactional. See [Tools](/guide/tools).
 
-The `#[agent]` macro generates a complete Agent wrapper struct with a fluent builder, removing all manual wiring.
+## `#[agent]`: an optional facade
 
 ```rust
-use ambi_macros::{agent, tool};
+use ambi::macros::{agent, tool};
 use ambi::types::ToolErr;
 
 #[tool(name = "add", timeout = 10, idempotent)]
@@ -141,93 +47,4 @@ async fn add(a: i32, b: i32) -> Result<i32, ToolErr> {
 pub struct DevAgent;
 ```
 
-### What the macro generates
-
-**1. Facade struct** — bundles `Agent`, `AgentState`, and the pipeline:
-
-```rust
-pub struct DevAgent {
-    pub agent: Agent,
-    pub state: Arc<RwLock<AgentState>>,
-    runner: ChatRunner,
-}
-```
-
-**2. Builder** — fluent construction:
-
-```rust
-let assistant = DevAgent::builder(engine_config)
-    .preamble("You are an intelligent assistant.")
-    .session_id("my-session")
-    .build()
-    .await?;
-```
-
-**3. Convenience methods** — direct access to common operations:
-
-```rust
-// Chat
-let reply = assistant.chat("What is 114514 plus 8080?").await?;
-
-// Stream
-let mut stream = assistant.chat_stream("Tell me a story").await?;
-
-// Multimodal
-let reply = assistant.execute(vec![
-    ContentPart::Text { text: "What's in this image?" },
-    ContentPart::Image { base64: image_str },
-]).await?;
-
-// Context management
-assistant.set_dynamic_context("Relevant docs: ...").await;
-assistant.append_dynamic_context("User locale: zh-CN").await;
-assistant.clear_dynamic_context().await;
-assistant.clear_history().await;
-```
-
-### Supported attributes
-
-| Attribute  | Default | Description |
-|------------|---------|-------------|
-| `tools = [...]` | `[]` | List of tool structs to register |
-| `pipeline = ...` | `ChatRunner` | Custom pipeline implementation |
-
-### Custom pipeline example
-
-```rust
-#[agent(tools = [AddTool], pipeline = MyCustomPipeline)]
-pub struct DevAgent;
-```
-
-Then build with a custom runner:
-
-```rust
-let assistant = DevAgent::builder(engine_config, MyCustomPipeline)
-    .preamble("You are helpful.")
-    .build()
-    .await?;
-```
-
----
-
-## Adding as a dependency
-
-`ambi-macros` is a standalone crate. Add it alongside `ambi`:
-
-```toml
-[dependencies]
-ambi = "0.3"
-ambi-macros = "0.1"
-```
-
-```bash
-# Or via cargo-add:
-cargo add ambi-macros
-```
-
-Then import macros directly:
-
-```rust
-use ambi_macros::tool;
-use ambi_macros::agent;
-```
+This generates a convenience facade and builder around core Agent/State/Pipeline mechanics. It does **not** change the underlying distinction between shared `Agent` capabilities and per-session state. See [`examples/crate_agent_in_macro.rs`](https://github.com/Maskviva/Ambi/blob/main/examples/crate_agent_in_macro.rs) for a complete example and [Design philosophy](/advanced/design-philosophy) for the architectural rationale.

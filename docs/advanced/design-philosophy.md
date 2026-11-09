@@ -1,124 +1,81 @@
-# Design Philosophy
+# Design philosophy: a small runtime, an open ceiling
 
-The evolution of Ambi's architecture is guided by four core principles. Understanding these helps you make better decisions when extending the framework.
+Ambi is a **small, composable AI Agent Runtime for Rust**. It provides mechanisms for model inference, tool execution, context management, and running an agent. It deliberately does **not** prescribe a universal way for agents to reason, plan, or cooperate.
 
----
+This is a design contract, not a claim that any collection of traits makes arbitrary workflows possible automatically. The public APIs remain specific and sometimes impose constraints. The point is to keep the core understandable and make new behavior possible through composition wherever the existing contracts allow it.
 
-## 1. Freedom Through Replaceability — Everything is a Trait
+## Composition over inheritance
 
-Ambi rejects "convention over configuration" as an implicit lock-in. **LLM backends, tool parsers, stream formatters, and even the entire execution pipeline are all exposed as replaceable traits.**
+Ambi avoids a hierarchy of `BaseAgent` / `WorkerAgent` / `SupervisorAgent`. Instead, an application assembles capabilities:
 
-| Component | Trait | How to swap |
-|-----------|-------|-------------|
-| LLM backend | `LLMEngineTrait` | `LLMEngineConfig::Custom(...)` |
-| Tool call parser | `ToolCallParser` | `agent.with_tool_parser(MyParser)` |
-| Stream formatter | `StreamFormatter` | `agent.with_stream_formatter(|| Box::new(MyFormatter))` |
-| Execution pipeline | `Pipeline` | `Pipeline.custom(handler)` or implement `Pipeline` |
-| Tokenizer | `TokenizerTrait` | `engine.with_custom_tokenizer(MyTokenizer)` |
+| Concept | Responsibility | Source of variation |
+| --- | --- | --- |
+| `Agent` | Reusable engine, configuration, tools, parser and formatter | Builder methods and shared components |
+| `AgentState` | A session's history and dynamic context | One state per conversation, or explicitly forked states |
+| `Pipeline` | How a request is executed | Implement your own pipeline |
+| `LLMEngineTrait` | How a model produces an answer or a stream | Built-in or custom backend |
+| `Tool` | A typed operation available to the model | Application-defined Rust implementations |
+| `ToolCallParser`, `StreamFormatter`, `TokenizerTrait` | Protocol and presentation boundaries | Replaceable implementations |
 
-You can switch between local `llama.cpp` and cloud OpenAI with a single-line config change, or implement `LLMEngineTrait` to integrate any private model. This **trait-first** approach makes the framework a set of composable wheels, not a sealed-hood vehicle.
+**Ambi's built-in examples set the floor, not the ceiling.** A third-party `Pipeline` can introduce an execution strategy that Ambi's authors never anticipated, without requiring that strategy to become part of the core crate.
 
-```rust
-// One line to swap engines:
-let config = LLMEngineConfig::OpenAI(openai_cfg);
-// vs
-let config = LLMEngineConfig::Llama(llama_cfg);
+A distinction matters: **replaceability is not the same as arbitrary pipeline composition**. For instance, the current `StandardRagPipeline` owns an internal `ChatRunner`; it is not a generic `Rag<P>` wrapper. Ambi does not claim to provide a universal graph execution engine.
+
+## Tree, branch, leaf: an execution metaphor
+
+```text
+                               Agent
+                 reusable engine, tools, configuration
+                                 |
+                  +--------------+---------------+
+                  |                              |
+               ChatRunner                    Custom Pipeline
+             (ReAct branch)                 (another branch)
+                  |
+         optional spawn_leaf tool
+                  |
+             +----+----+
+             |         |
+          Leaf A      Leaf B
+        fresh state  fresh state
+             |         |
+       final answer  final answer
+
+         AgentState is supplied separately to a pipeline.
 ```
 
-## 2. Extreme Developer Experience — Five Lines to Production
+**Agent is the tree; Pipeline is the branch; Leaf is a leaf.** This is **not** a Rust inheritance tree or a requirement that every pipeline grow leaves. Different branches can have different capabilities, and downstream developers can graft in their own behavior through traits.
 
-From day one, Ambi has aimed for **production-grade agents with minimal code**. Five lines of core code launch a cloud-reasoning chat agent:
+Why *Leaf* rather than *Sub-agent*? A delegated task does not need a second persistent `Agent` identity simply because a parent invoked it. In Ambi 0.4.1, a Leaf is a short-lived **execution**, attached as a tool to `ChatRunner`, with an isolated temporary conversation state. It returns a compact result and disappears. Its value is that intermediate task context does not automatically become parent history.
 
-```rust
-let agent = Agent::make(config).await?
-    .preamble("You are a helpful assistant.");
-let state = AgentState::new_shared("session-1");
-let runner = ChatRunner::default();
-let reply = runner.chat(&agent, &state, "Hello!").await?;
-```
+This is **lifecycle and context isolation**, not a claim of side-effect isolation: the built-in Leaf inherits the parent's registered tools and shares its engine. See [Leaf task delegation](/guide/leaf).
 
-The `#[tool]` procedural macro further reduces tool definition to a regular async Rust function, auto-generating JSON Schema, timeout, and retry logic:
+## Mechanism belongs in the runtime; policy belongs with the application
 
-```rust
-#[tool(name = "get_weather", description = "Get weather for a city")]
-async fn get_weather(city: String) -> Result<WeatherOutput, ToolErr> {
-    // Your logic — no trait impl, no manual schema
-}
-```
+The runtime has concrete duties: invoke model backends, honor tool timeout/retry policies, handle streaming, account for conversation history, and expose useful error paths. The application chooses system prompts, execution strategy, tool authorization, storage and business semantics.
 
-This isn't magic — it's carefully designed zero-cost abstractions and smart defaults that push boilerplate into the framework's foundation.
+This line also explains why Ambi keeps `ambi-pipelines`, `ambi-memory` and `ambi-macros` as separate crates. Advanced workflows should not require everyone to pay for, or adopt, one cognitive architecture.
 
-## 3. Unbreakable Robustness — Production is Not a Playground
+A small public API should not hide important operational caveats:
 
-Ambi has a near-obsessive focus on failure modes hidden in the long tail:
+- Token accounting used for history eviction is **approximate** and is not a universal guarantee against provider context errors.
+- `AgentState` is distinct from `Agent`, but passing the **same mutable state** into concurrent runs does not by itself serialize whole conversations.
+- A tool future timing out or being cancelled does **not** prove an external side effect was rolled back.
+- Shared local `llama.cpp` engine state can make concurrent Leaf calls contend for one worker and KV cache.
 
-### OOM Protection
-The streaming buffer has a hard cap (`max_buffer_size`, default 8192). When the buffer exceeds it, it self-clears and logs an error, preventing runaway generation from blowing up memory.
+Read [Architecture](/advanced/architecture) for the code-level boundaries and [Context eviction](/advanced/context-eviction) for operational limits.
 
-### Smart Context Eviction
-Evolved from early string-length estimation to an O(1) FIFO algorithm backed by a precise token accumulator:
+## A rule for adding abstractions
 
-```
-each message → (Arc<Message>, exact_token_count)
-total_tokens: cached sum → O(1) lookup
-eviction: pure FIFO, no System message eviction
-```
+1. Try composing existing engine, pipeline, state and tool mechanisms first.
+2. Add a new core abstraction only when a real use case cannot be expressed with existing contracts.
+3. Do not make an optional feature silently change the behavior of existing pipelines.
+4. Keep safety and lifecycle guarantees explicit, especially when external tools have side effects.
 
-`User` messages are preserved as safe cut points — the history only stores `User`, `Assistant`, and `Tool` messages (System is fully decoupled), maintaining conversation coherence while preventing token overflow.
+Leaf follows these rules in 0.4.1: it is a Cargo feature **and** a `ChatRunner` opt-in; it reuses the existing tool mechanism and ReAct loop; and it creates no persistent agent registry. Whether another pipeline needs a different kind of disposable task is a decision for its own author.
 
-### Tool Execution Safety Net
-- **Non-idempotent tools never retry** (no duplicate payments)
-- **Idempotent tools** retry up to a configurable count
-- **Client disconnect immediately aborts ghost tool execution** — built into the framework via `tokio::select!`
-- **Cancellation safety** is guaranteed at the framework level
+## What Ambi is not trying to be
 
-```rust
-// Core safety pattern from tool_handler.rs:
-tokio::select! {
-    res = run_future => { /* tool completed */ }
-    _ = async { tx_clone.closed().await } => {
-        // Client disconnected. Aborting ghost tool execution.
-    }
-}
-```
+Ambi does not aspire to bundle every planning method, role hierarchy, workflow graph, durable orchestrator, permission system, or memory database. A small runtime can support implementations of those ideas, but **supporting an extension** and **shipping a built-in product** are different commitments.
 
-### Inference State Integrity
-The local engine (`llama.cpp`) provides a `snapshot/restore` mechanism. After any decoding failure or stream interruption, both the KV Cache and session state are restored to a consistent point, eliminating silent state corruption.
-
-```rust
-// From session.rs:
-pub fn snapshot(&self) -> (Vec<LlamaToken>, Vec<u8>, i32);
-pub fn restore(&mut self, snapshot: ...);
-```
-
-## 4. Write Once, Run Anywhere — Unified Mental Model for Native and WASM
-
-Ambi has a built-in cross-platform async runtime abstraction (`runtime.rs`) that seamlessly maps Tokio-native `spawn_blocking` to `wasm-bindgen-futures` polyfills:
-
-| Function | Native (Tokio) | WASM |
-|----------|---------------|------|
-| `spawn` | `tokio::spawn` | `wasm_bindgen_futures::spawn_local` |
-| `spawn_blocking` | `tokio::task::spawn_blocking` | Direct execution (single-threaded) |
-| `sleep` | `tokio::time::sleep` | `gloo_timers::future::sleep` |
-| `timeout` | `tokio::time::timeout` | Future race with timer |
-| `Send + Sync` | Enforced | Relaxed (empty marker) |
-
-Agent code written on a server compiles to the browser nearly unchanged. Hardware-dependent features (`llama.cpp`) are compile-time gated:
-
-```rust
-#[cfg(all(target_arch = "wasm32", feature = "llama-cpp"))]
-compile_error!("The 'llama-cpp' feature is not supported on wasm32");
-```
-
-The same API, the same traits — seamlessly portable between cloud, edge, and device. This is the "universal AI framework" gene that Ambi has carried since 0.3.0.
-
----
-
-## Summary
-
-| Principle | Core Idea | Code Evidence |
-|-----------|-----------|---------------|
-| Freedom | Everything is a trait | `LLMEngineTrait`, `Pipeline`, `ToolCallParser`, `StreamFormatter` |
-| DX | Five lines to production | `#[tool]` macro, fluent `Agent::make().preamble().template()` |
-| Robustness | Production-grade safety net | FIFO eviction, ghost cancellation, snapshot/restore, OOM guard |
-| Portability | Native ↔ WASM | `runtime.rs` polyfills, compile-time feature gating |
+The design target is therefore **a stable, comprehensible execution substrate**—not the longest feature list.

@@ -1,60 +1,44 @@
-# 流式响应
+# 流式输出与取消边界
 
-流式输出让你边生成边展示，不用等全部回复。
+Pipeline 决定如何输出结果。内置 `ChatRunner` 提供返回完整文本的 `chat()` 与增量输出的 `chat_stream()`；二者底层使用同一套 ReAct 执行循环。
 
-## 基本用法
+## 消费文本流
 
 ```rust
 use futures::StreamExt;
 
-let mut stream = runner.chat_stream(&agent, &state, "讲个故事").await?;
-
-while let Some(chunk) = stream.next().await {
-    match chunk {
-        Ok(text) => print!("{}", text),
-        Err(e) => eprintln!("流错误：{}", e),
+let mut stream = runner.chat_stream(&agent, &state, "解释项目设计").await?;
+while let Some(item) = stream.next().await {
+    match item {
+        Ok(text) => print!("{text}"),
+        Err(err) => eprintln!("stream error: {err}"),
     }
 }
 ```
 
-每次 `yield` 的是 `Result<String>`。终端里直接打印就行了；Web 服务里可以转成 SSE 或 WebSocket 帧发到前端。
+需要额外依赖 `futures = "0.3"` 才能使用 `StreamExt`。返回的是 `Result<String>` 项构成的**文本流**，不是结构化模型／工具事件协议。应用可将文本转发至 SSE 或 WebSocket。
 
-## WASM 浏览器流式传输
+## 模型文本与工具展示
 
-Ambi 的流式 API 在 WASM 目标下原生支持浏览器环境。OpenAI 提供者使用浏览器原生的 `fetch` 和 `ReadableStream` API——
-不需要额外的 polyfill。同样的 `chat_stream()` 代码在原生和浏览器下都适用。
+`ChatRunner` 流式输出可能包含工具相关的展示文本，具体取决于 `StreamFormatter`。可以使用 `agent.with_standard_formatting()`，或者通过 `with_stream_formatter(...)` 指定自定义格式化器。
 
-参考 [`examples/webAssembly`](https://github.com/maskviva/ambi/tree/main/examples/webAssembly)
-查看包含 UI 切换演示的在线浏览器示例。
+若业务需要机器可解析的工具审计事件，不应该把展示文本当成稳定协议。参见 [流式格式化器](/zh/advanced/stream-formatter)。
 
-## 流模式与工具的交互
+## 取消不等于事务回滚
 
-流模式下，工具调用的结果块也会被推到流里。你看到的可能是：
+接收端被丢弃后，Runner 可以发现客户端已不再消费响应，继而停止不必要的工作。OpenAI 流式路径与本地 llama.cpp 也有取消感知机制。但不能把这种机制理解成跨系统的事务保证：
 
-```
-[Thinking]:
-用户问天气...
-[Content]:
-让我查一下。
-[TOOL_CALL]: get_weather({"city":"东京"})
-```
+- 远程 Provider 可能已经接收请求。
+- 工具 Future 被取消时，外部副作用可能仍继续。
+- 本地推理 Worker 有自己的取消检测点。
 
-如果启用了 `with_standard_formatting()`，这些 tool 标签会被自动清理。
+应由业务层处理关键外部操作。流式父级调用 Leaf 时，Leaf 内部执行的是**同步循环**，最后只向父级返回一个工具结果，不转发自身的 Token 流。
 
-## 客户端断连处理
+## 同步与流式
 
-客户端断开连接（stream receiver 被 drop）时，框架会：
-1. 停止消费 LLM token
-2. 取消正在执行的工具（"幽灵调用取消"）
-3. 记录日志并停止
+| API | 输出 | 适用场景 |
+| --- | --- | --- |
+| `runner.chat(...)` | `Result<String>` | 后台作业、批处理、简单应用 |
+| `runner.chat_stream(...)` | `Result<String>` 文本流 | 交互式输出 |
 
-这避免了已放弃请求上的浪费推理和工具执行。
-
-## 同步 vs 流式
-
-| 模式 | 调用 | 返回值 | 适用场景 |
-|------|------|--------|---------|
-| 同步 | `runner.chat()` | `Result<String>` | 简单请求、批量处理 |
-| 流式 | `runner.chat_stream()` | `ReceiverStream<Result<String>>` | 聊天界面、实时展示 |
-
-两种模式内部跑的是同一个 ReAct 循环，区别只在输出交付方式。
+继续：[工具](/zh/guide/tools) · [Leaf](/zh/guide/leaf) · [架构](/zh/advanced/architecture)。

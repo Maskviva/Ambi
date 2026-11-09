@@ -2,31 +2,42 @@
 layout: home
 
 hero:
-  name: "Ambi"
-  text: "高自由 · 高可扩展 · 高性能 · 跨平台"
-  tagline: 一个用 Rust 写的 AI Agent 框架，不挡你的路
+  name: Ambi
+  text: 小而可组合的 Rust AI Agent Runtime
+  tagline: 组合能力，而不是继承层级。Ambi 提供执行机制，智能体行为由你定义。
   image:
     src: /logo.svg
-    alt: Ambi
+    alt: Ambi 标志
   actions:
     - theme: brand
       text: 快速开始
       link: /zh/guide/getting-started
     - theme: alt
-      text: 查看 GitHub
+      text: 设计理念
+      link: /zh/advanced/design-philosophy
+    - theme: alt
+      text: GitHub
       link: https://github.com/Maskviva/Ambi
 
 features:
-  - icon: 🎯
-    title: 高自由
-    details: 引擎、管道、解析器、格式化器——每一个环节都可以换。本地 llama.cpp、云 API、或者你自己写的后端，随意组合。
   - icon: 🧩
-    title: 高可扩展
-    details: 核心很薄，不挡路。所有能力都是 trait，实现你需要的，剩下的不管。未来的扩展库直接插上就行。
-  - icon: ⚡
-    title: 高性能
-    details: Rust + Tokio 异步。Arc 共享蓝图，克隆零成本。工具并发执行。内存占用小。没有 GC。没有意外。
-  - icon: 🌐
-    title: 跨平台
-    details: 一套代码。原生二进制跑在 Windows/Linux/macOS，或者编译成 WASM 跑在浏览器里。Ambi 在 Rust 能编译的地方都能跑。
+    title: 组合优于继承
+    details: 自由替换 Engine、Pipeline、Tool、Parser 和 Formatter，不强制多 Agent 层级或工作流图。
+  - icon: 🌳
+    title: Agent · Pipeline · Leaf
+    details: Agent 是复用能力的树，Pipeline 是执行策略的枝，Leaf 是按任务生成、用完即丢的叶。
+  - icon: 🔧
+    title: 小型 Runtime，开放扩展点
+    details: 内置 ReAct 与可选 Pipeline、Memory、Macro 扩展；其他开发者可以决定能力的上限。
+  - icon: ⚙️
+    title: 云端、本地与自定义模型
+    details: OpenAI 兼容 API、本地 llama.cpp 和自定义 Engine 均可以接入运行时。
 ---
+
+## 先理解设计，再使用 API
+
+Ambi **不规定所有 Agent 必须如何思考或协作**。它提供支撑不同实现所需要的基础执行机制。建议从 [设计理念](/zh/advanced/design-philosophy) 和 [架构](/zh/advanced/architecture) 开始。
+
+**0.4.1 新增：** 可选的 [Leaf 任务委派](/zh/guide/leaf) 让 `ChatRunner` 运行一次性、上下文隔离的子任务，不创建长期存在的第二个 Agent。Leaf 仍继承原始工具并共享 Engine，**不是安全沙箱**。
+
+接着阅读 [快速开始](/zh/guide/getting-started) 或 [自定义 Pipeline](/zh/advanced/custom-pipeline)。

@@ -1,33 +1,20 @@
-# Getting Started
+# Getting started (Rust, 0.4.1)
 
-This page walks you through a working setup in about 5 minutes. You'll need:
+This is the shortest route to a working text agent. Ambi is an **Agent Runtime**, not a mandatory multi-agent framework: you choose an engine, build reusable capabilities into an `Agent`, pass separate `AgentState`, and select a `Pipeline`.
 
-- Rust 1.75+
-- An API key (for cloud backends) or a GGUF model file (for local inference)
-
-## 1. Add the dependency
+## 1. Add dependencies
 
 ```toml
 [dependencies]
-ambi = "0.3"
+ambi = "0.4.1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
-Ambi defaults to the `openai-api` feature. If you only ever use cloud backends, this keeps compilation fast.
+The default feature is `openai-api`. If `0.4.1` is not yet published to your registry, use a `path` or Git dependency pointing to the matching source. Configure `OPENAI_API_KEY` for your endpoint.
 
-For local inference via llama.cpp:
+## 2. Run a chat
 
-```toml
-ambi = { version = "0.3", default-features = false, features = ["llama-cpp"] }
-```
-
-GPU acceleration is available as sub-features: `cuda`, `vulkan`, `metal`, `rocm` – pick exactly one.
-
-```toml
-ambi = { version = "0.3", features = ["llama-cpp", "cuda"] }
-```
-
-## 2. Minimal agent
+Create `src/main.rs`:
 
 ```rust
 use ambi::llm::providers::openai_api::config::OpenAIEngineConfig;
@@ -35,50 +22,56 @@ use ambi::{Agent, AgentState, ChatRunner, LLMEngineConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = LLMEngineConfig::OpenAI(OpenAIEngineConfig {
-        api_key: std::env::var("OPENAI_API_KEY")?,
-        base_url: "https://api.openai.com/v1".into(),
-        model_name: "gpt-4o".into(),
-        temp: 0.7,
-        top_p: 0.95,
-    });
+    let key = std::env::var("OPENAI_API_KEY")?;
+    let cfg = OpenAIEngineConfig::create(key, "gpt-4o-mini")
+        .temp(0.7);
 
-    let agent = Agent::make(config).await?
-        .preamble("You are a helpful assistant.")
-        .template(ambi::ChatTemplateType::Chatml);
-
-    let state = AgentState::new_shared("session-001");
+    let agent = Agent::make(LLMEngineConfig::OpenAI(cfg)).await?
+        .preamble("You are a concise assistant.");
+    let state = AgentState::new_shared("session-1");
     let runner = ChatRunner::default();
 
-    let reply = runner.chat(&agent, &state, "Hello!").await?;
-    println!("{}", reply);
-
+    let answer = runner.chat(&agent, &state, "Hello, Ambi!").await?;
+    println!("{answer}");
     Ok(())
 }
 ```
 
-`AgentState::new_shared("...")` is a convenience constructor that wraps the state in `Arc<RwLock<>>` for thread safety. The `session_id` parameter establishes physical uniqueness for distributed tracing and KV cache slotting. `Agent::make` loads the engine (spawned on a blocking thread for llama.cpp), then the builder lets you chain configuration. `ChatRunner::default()` creates a runner with concurrency limit of 5.
+Run with `cargo run`. `Agent::make` initializes the engine; `ChatRunner::default()` uses a ReAct-style chat/tool loop and a default per-loop tool concurrency of five.
 
-## 3. Pick your engine
+## 3. Choose a backend
 
-Switching between cloud and local is a one-line change – swap the config enum variant:
+**OpenAI-compatible endpoint:**
 
 ```rust
-// Cloud
-let config = LLMEngineConfig::OpenAI(openai_cfg);
-
-// Local (requires "llama-cpp" feature)
-let config = LLMEngineConfig::Llama(llama_cfg);
+let cfg = OpenAIEngineConfig::create(api_key, "your-model")
+    .base_url("https://your-endpoint.example/v1".into())
+    .temp(0.2);
 ```
 
-Everything else – tools, templates, streaming, formatters – stays the same.
+**Local GGUF via llama.cpp** (native targets only):
 
-## 4. Runtime requirement
+```toml
+ambi = { version = "0.4.1", default-features = false, features = ["llama-cpp"] }
+```
 
-Ambi needs Tokio with the `rt-multi-thread` feature. Single-threaded runtimes (`current_thread`) will not work because `Agent::make` calls `spawn_blocking` internally (needed for llama.cpp model loading).
+```rust
+use ambi::llm::providers::llama_cpp::config::LlamaEngineConfig;
+let cfg = LlamaEngineConfig::builder("./models/model.gguf")
+    .n_ctx(4096)
+    .n_tokens(512)
+    .build();
+let engine_cfg = LLMEngineConfig::Llama(cfg);
+```
 
-## What's next
+You can optionally enable one GPU backend (`cuda`, `vulkan`, `metal`, or `rocm`). Do not select incompatible accelerators together. Browser WebAssembly uses the OpenAI-compatible backend, not llama.cpp.
 
-- [Basic Agent](/guide/basic-agent) – system prompts, chat templates, multi-turn conversations
-- [Tools](/guide/tools) – giving your agent the ability to call Rust functions
-- [Configuration](/guide/configuration) – eviction strategy, iteration limits, and more
+## 4. Continue from here
+
+- [Design philosophy](/advanced/design-philosophy) — why Agent, Pipeline and Leaf are distinct
+- [Basic Agent](/guide/basic-agent) — separate conversations and dynamic context
+- [Tools](/guide/tools) — expose typed Rust operations
+- [Leaf](/guide/leaf) — optional, disposable task delegation (`sub-agent` feature)
+- [Custom Pipeline](/advanced/custom-pipeline) — decide how the agent executes
+
+Examples in the repository: [`examples/chat_cloud.rs`](https://github.com/Maskviva/Ambi/blob/main/examples/chat_cloud.rs), [`examples/chat_local.rs`](https://github.com/Maskviva/Ambi/blob/main/examples/chat_local.rs).

@@ -1,141 +1,69 @@
-# 基础 Agent
+# Agent 与 AgentState：能力复用，会话独立
 
-跑起来一个 Agent 之后（见[快速开始](/zh/guide/getting-started)），这篇讲日常最常用的几个模式。
+`Agent` 持有**能力**，`AgentState` 持有**一段对话**。分离它们比为每种工作流再派生一种 Agent 类型更加重要。
 
-## 系统提示词
-
-系统提示词设定 Agent 的行为，每次请求都会拼在 prompt 的最前面。
+## 复用一个 Agent
 
 ```rust
-let agent = Agent::make(config).await?
-    .preamble("你是一个用俳句回答问题的助手。");
-```
+let agent = Agent::make(engine_config).await?
+    .preamble("你是一个简洁的助手。")
+    .max_iterations(8);
 
-提示词长度没有硬性限制，但注意它会占 token 预算。
-
-## 聊天模板
-
-不同模型用不同的 prompt 格式。Ambi 内置了 9 种模板：
-
-| 模板 | 适用模型 |
-|------|----------|
-| `Chatml` | OpenAI、Qwen、很多微调模型 |
-| `Llama3` | Llama 3 / 3.1 系列 |
-| `Deepseek` | DeepSeek V2/V3、R1 |
-| `Qwen` | Qwen 2 / 2.5 |
-| `Gemma` | Google Gemma |
-| `Phi3` | Microsoft Phi-3 / Phi-4 |
-| `Mistral` | Mistral / Mixtral |
-| `Zephyr` | HuggingFace Zephyr |
-| `Llama2` | 旧的 Llama 2 |
-
-```rust
-use ambi::ChatTemplateType;
-
-let agent = Agent::make(config).await?
-    .template(ChatTemplateType::Deepseek);
-```
-
-默认是 `Chatml`。如果模型需要自定义格式，可以手动构造 `ChatTemplate` 结构体。
-
-## 多轮对话
-
-Agent 把历史存在 `AgentState` 里。每次 `chat()` 都会追加用户消息和助手回复，下一轮自动带上上下文。
-
-```rust
-let state = AgentState::new_shared("session-001");
-
-runner.chat(&agent, &state, "我叫小明。").await?;
-// 下一轮它记得"小明"
-runner.chat(&agent, &state, "我叫什么名字？").await?;
-// -> "你叫小明"
-```
-
-### session_id
-
-每个 `AgentState` 都带有一个唯一的 `session_id`，为高并发环境下的分布式追踪和 KV Cache 槽位分配提供支持：
-
-```rust
-let state = AgentState::new_shared("user-42-conversation-3");
-```
-
-### 动态上下文
-
-易变数据（RAG 结果、时间戳、环境变量）通过 `AgentState` 注入，不会污染静态的 `system_prompt`：
-
-```rust
-state.write().await.set_dynamic_context("相关文档：...");
-state.write().await.append_dynamic_context("用户语言：zh-CN");
-state.write().await.clear_dynamic_context(); // 过期后重置
-```
-
-### 清空历史
-
-想重新开始的时候：
-
-```rust
-let mut state_lock = state.write().await;
-ChatRunner::clear_history(&agent, &mut state_lock);
-```
-
-这会同时清空对话消息和引擎内部上下文（本地模型会清 KV Cache）。
-
-### ChatHistory 查询方法
-
-```rust
-let hist = &state.read().await.chat_history;
-
-// 搜索包含关键词的消息
-let results = hist.search_by_keyword("天气");
-
-// 获取最近一条用户消息
-if let Some(msg) = hist.last_user_message() {
-    // ...
-}
-
-// 获取最近一条助手回复
-if let Some(msg) = hist.last_assistant_message() {
-    // ...
-}
-```
-
-## 克隆友好
-
-`Agent` 的所有内部字段都用 `Arc` 包装，克隆只是引用计数 +1。可以一个 Agent 蓝图跑几百个对话：
-
-```rust
-let agent = Agent::make(config).await?.preamble("你是一个助手。");
-let state = AgentState::new_shared("多轮对话");
 let runner = ChatRunner::default();
+let alice = AgentState::new_shared("conversation-alice");
+let bob = AgentState::new_shared("conversation-bob");
 
-for _ in 0..100 {
-    let agent = agent.clone();
-    let state_clone = Arc::clone(&state);
-    tokio::spawn(async move {
-        let _ = runner.chat(&agent, &state_clone, "你好").await;
-    });
-}
+let a = runner.chat(&agent, &alice, "你好").await?;
+let b = runner.chat(&agent, &bob, "你好").await?;
 ```
 
-## 错误处理
+两份 State 的历史互不共享。`Agent` 主要依靠 `Arc` 共享资源，克隆成本较低。尽量使用不同的 `session_id`；本地 llama.cpp 会在推理状态缓存管理中利用它区分会话。
 
-所有公开 API 都返回 `Result<T, AmbiError>`。错误枚举包括：
+## Prompt 与模板
 
-- `EngineError` —— 模型初始化或推理失败
-- `AgentError` —— 逻辑错误（如工具名重复）
-- `ToolError` —— 工具执行超时或失败
-- `ContextError` —— prompt 格式化问题
-- `PipelineError` —— 流中断
-- `MaxIterationsReached` —— ReAct 循环超限
+`Agent::preamble(&str)` 设置可复用的系统提示词；`.template(ChatTemplateType::Chatml)` 选择内置聊天模板。不同模型可能需要不同格式，也可以使用自定义 `ChatTemplate`。
 
 ```rust
-let agent = Agent::make(config).await?.preamble("你是一个助手。");
-let state = AgentState::new_shared("错误处理");
-let runner = ChatRunner::default();
-
-match runner.chat(&agent, &state, "你好").await {
-    Ok(reply) => println!("{}", reply),
-    Err(AmbiError::ToolError(msg)) => eprintln!("工具执行失败：{}", msg),
-    Err(e) => eprintln!("其他错误：{}", e),
-}
+use ambi::types::ChatTemplateType;
+let agent = Agent::make(engine_config).await?
+    .template(ChatTemplateType::Chatml)
+    .preamble("给出依据，不确定时明确说明。");
 ```
+
+## 动态上下文属于会话
+
+```rust
+{
+    let mut session = alice.write().await;
+    session.set_dynamic_context("参考资料：项目设计文档 v3");
+    session.append_dynamic_context("语言：简体中文");
+}
+
+// 信息过期后，显式清理。
+alice.write().await.clear_dynamic_context();
+```
+
+动态上下文被组合进模型的有效 System Context，不是普通聊天历史，**不会自动通过 FIFO 历史驱逐机制裁剪**。应用需要负责刷新与清理它。
+
+## fork 与重新开始
+
+`AgentState::fork()` 可以复制会话分支，底层历史消息内容通过 `Arc` 共享，适用于 ToT 等多路径探索。`AgentState::new_shared()` 则是全新的会话。
+
+清理历史：
+
+```rust
+let mut session = alice.write().await;
+ChatRunner::clear_history(&agent, &mut session);
+```
+
+**注意：** `clear_history` 还会调用共享 Engine 的 `reset_context()`。如果多个会话共用一个本地引擎，这个 Reset 并非只影响当前会话。
+
+## 并发由应用管理
+
+`Arc<RwLock<AgentState>>` 保证单次 Rust 内存读写的同步，却**不保证一个完整聊天请求的串行化**。需要严格会话顺序时，在使用同一 State 的调用外层建立 Session Mutex 或队列。不同 State 可以复用同一个 Agent。
+
+## 错误语义
+
+公共接口返回 `Result<_, AmbiError>`。需要时应单独处理 Engine、Tool、Pipeline 相关错误和 `MaxIterationsReached`。一次失败的 Run 可能已经发生不可逆的工具操作，不能把错误等同于「什么都没发生」。
+
+继续：[架构](/zh/advanced/architecture) · [工具](/zh/guide/tools) · [Leaf](/zh/guide/leaf)。
