@@ -1,6 +1,6 @@
 [package]
 name = "ambi-memory"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Pluggable 3D memory extension for Ambi: KV state, semantic vector recall, and rolling summary."
 license = "Apache-2.0"

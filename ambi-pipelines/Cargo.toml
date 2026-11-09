@@ -1,6 +1,6 @@
 [package]
 name = "ambi-pipelines"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Advanced cognitive pipelines for Ambi: RAG, Chain-of-Thought, Tree-of-Thoughts, and Reflexion."
 license = "Apache-2.0"
